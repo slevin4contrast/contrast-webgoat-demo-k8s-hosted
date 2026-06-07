@@ -166,6 +166,8 @@ scripts/port-forward.sh                    wait for WebGoat, forward to localhos
 scripts/status.sh                          health check (operator, pod, injection)
 scripts/teardown.sh                        remove everything + clear the Contrast UI
 scripts/clear-contrast-ui.mjs              clear findings / attacks / routes / Behavior via the Contrast API
+scripts/verify-findings.mjs                vet TPs vs FPs: cross-reference a route-coverage CSV against a source-grounded sink map
+docs/false-positives-vs-real-vulns.md      TP/FP analysis and the technique-based comparison
 demo/run-exercises.mjs                     functional exercise run (benign input -> IAST findings)
 demo/exercises.mjs                         route catalog: vulnerable vs safe vs simulated
 demo/run-adr-attacks.mjs                   attack run (payloads -> Protect/ADR detection)
