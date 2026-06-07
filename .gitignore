@@ -1,0 +1,11 @@
+# Secrets -- never commit your Contrast token or API credentials.
+.env
+*.token
+contrast-agent-operator.local.yaml
+
+# Node deps for the demo scripts (package-lock.json IS committed for reproducible installs)
+demo/node_modules/
+
+# OS / editor cruft
+.DS_Store
+*.swp

@@ -1,0 +1,16 @@
+{
+  "name": "contrast-webgoat-live-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Functional exercise run against WebGoat to light up the Contrast dashboard.",
+  "scripts": {
+    "exercise": "node run-exercises.mjs",
+    "plan": "node run-exercises.mjs --dry-run",
+    "adr-attacks": "node run-adr-attacks.mjs",
+    "adr-plan": "node run-adr-attacks.mjs --dry-run"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

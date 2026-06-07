@@ -1,0 +1,89 @@
+---
+# WebGoat deployment.
+#
+# The label `contrast-agent: java` is what the Contrast AgentInjector selects on
+# (the Contrast AgentInjector is configured in helm/contrast-agent-operator.values.yaml). Nothing without that label is ever touched.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webgoat
+  namespace: webgoat
+  labels:
+    app: webgoat
+    contrast-agent: java
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webgoat
+  template:
+    metadata:
+      labels:
+        app: webgoat
+        contrast-agent: java
+    spec:
+      containers:
+        - name: webgoat
+          # Pinned to the latest published WebGoat release (multi-arch amd64/arm64)
+          # for a reproducible demo. Runs on a JDK the Contrast Java agent supports.
+          image: webgoat/webgoat:v2025.3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: webgoat
+              containerPort: 8080
+            - name: webwolf
+              containerPort: 9090
+          env:
+            # WebGoat binds to loopback by default, which is unreachable inside a
+            # pod. These force it to listen on all interfaces.
+            - name: WEBGOAT_HOST
+              value: "0.0.0.0"
+            - name: WEBGOAT_PORT
+              value: "8080"
+            - name: WEBWOLF_HOST
+              value: "0.0.0.0"
+            - name: WEBWOLF_PORT
+              value: "9090"
+            # Some lessons are timezone-sensitive; pin it for reproducible demos.
+            - name: TZ
+              value: "UTC"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "768Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1536Mi"
+          readinessProbe:
+            httpGet:
+              path: /WebGoat/login
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+          startupProbe:
+            httpGet:
+              path: /WebGoat/login
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webgoat
+  namespace: webgoat
+  labels:
+    app: webgoat
+spec:
+  type: ClusterIP
+  selector:
+    app: webgoat
+  ports:
+    - name: webgoat
+      port: 8080
+      targetPort: 8080
+    - name: webwolf
+      port: 9090
+      targetPort: 9090

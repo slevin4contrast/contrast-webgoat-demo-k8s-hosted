@@ -1,0 +1,40 @@
+# Helm values for the Contrast Agent Operator.
+# Chart: contrast/contrast-agent-operator
+# Repo:  https://contrastsecurity.dev/helm-charts
+#
+# Installed by scripts/setup.sh as release "contrast-agent-operator" into the
+# "contrast-agent-operator" namespace.
+
+# Cluster-wide default connection + agent configuration applied to any injected
+# workload. Because injection is restricted to the webgoat namespace below, these
+# defaults only ever affect WebGoat.
+clusterDefaults:
+  enabled: true
+  # tokenValue is intentionally NOT stored here. setup.sh injects it at install
+  # time from your .env file via:
+  #   --set clusterDefaults.tokenValue=$CONTRAST_TOKEN
+  # If you prefer, you can uncomment and paste it directly (do not commit it):
+  # tokenValue: "PASTE_YOUR_AGENT_TOKEN_HERE"
+  # Assess (IAST) reports a vulnerability only when the actual vulnerable code path
+  # executes, so the simulated "Lesson Passed!" regex checks never produce findings.
+  # Protect (RASP) is also enabled to show runtime attack detection/blocking. With
+  # the functional-exercise run (benign input) Protect stays quiet; it reacts to real
+  # attacks. NOTE: enabling Protect here requires a Protect license on the app/org,
+  # and it locks the Protect toggle in the Contrast UI (managed by this config).
+  yaml: |-
+    application:
+      name: WebGoat IAST/ADR Demo
+    server:
+      environment: QA
+    assess:
+      enable: true
+    protect:
+      enable: true
+
+# Create injectors, but ONLY for the webgoat namespace. This is the safety
+# boundary on a shared kubeadm cluster: no other namespace is ever a target, and
+# even within webgoat only pods labeled `contrast-agent: java` are injected.
+agentInjectors:
+  enabled: true
+  namespaces:
+    - webgoat
