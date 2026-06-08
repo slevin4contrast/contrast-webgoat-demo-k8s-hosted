@@ -6,6 +6,10 @@ for the false-positive story: a runtime tool (Contrast Assess) reports the real 
 stays silent on the simulated ones, because it watches code execution rather than
 guessing from responses.
 
+This is the complete reference inventory. For the narrative version (how we vet true
+positives, and the false-positive classes each tool technique produces), see
+[`false-positives-vs-real-vulns.md`](false-positives-vs-real-vulns.md).
+
 Each row was checked against the WebGoat v2025.3 source. Three buckets:
 
 - **A. Real, dataflow vulnerabilities** — untrusted input reaches a real sink. Contrast

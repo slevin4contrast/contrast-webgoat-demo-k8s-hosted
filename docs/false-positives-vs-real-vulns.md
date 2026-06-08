@@ -36,6 +36,10 @@ WebGoat v2025.3 source. These are unambiguous true positives.
 | `GET /crypto/hashing/md5` | Weak cryptography | `MessageDigest.getInstance("MD5")` |
 | `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
 
+This table is a representative subset of the headline cases. For the complete v2025.3
+lesson-by-lesson inventory (every real, simulated, and logic-only lesson), see
+[`webgoat-vuln-classification.md`](webgoat-vuln-classification.md).
+
 Two we deliberately do not overclaim:
 
 - **Stored XSS** (`/CrossSiteScriptingStored/stored-xss`) reports only if the stored
