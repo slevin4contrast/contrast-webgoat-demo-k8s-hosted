@@ -22,7 +22,7 @@ Run WebGoat locally first (scripts/port-forward.sh), then:
     python3 demo/full-coverage-exercise.py
 
 Config via env (defaults shown):
-    WEBGOAT_BASE  http://127.0.0.1:8080/WebGoat
+    WEBGOAT_BASE  http://127.0.0.1:8080  (root context)
     WEBWOLF_BASE  http://127.0.0.1:9090/WebWolf
     WEBGOAT_USER  webgoat3
     WEBGOAT_PASS  password
@@ -39,7 +39,7 @@ import zipfile
 
 import requests
 
-BASE = os.environ.get("WEBGOAT_BASE", "http://127.0.0.1:8080/WebGoat")
+BASE = os.environ.get("WEBGOAT_BASE", "http://127.0.0.1:8080")
 WEBWOLF = os.environ.get("WEBWOLF_BASE", "http://127.0.0.1:9090/WebWolf")
 USER = os.environ.get("WEBGOAT_USER", "webgoat3")
 PASS = os.environ.get("WEBGOAT_PASS", "password")

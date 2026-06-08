@@ -35,7 +35,7 @@ node run-exercises.mjs --dry-run
 
 | Var | Default | Purpose |
 |---|---|---|
-| `BASE_URL` | `http://localhost:8080/WebGoat` | WebGoat base URL |
+| `BASE_URL` | `http://localhost:8080` | WebGoat base URL (root context) |
 | `DELAY_MS` | `2500` | Pause between routes so findings appear one at a time |
 | `USERNAME` | `contrast-demo-<timestamp>` | A fresh user is registered each run |
 | `PASSWORD` | `password` | Password for the registered user |
@@ -43,7 +43,7 @@ node run-exercises.mjs --dry-run
 Example, slower pacing against a different host:
 
 ```bash
-BASE_URL=http://localhost:8080/WebGoat DELAY_MS=4000 node run-exercises.mjs
+BASE_URL=http://localhost:8080 DELAY_MS=4000 node run-exercises.mjs
 ```
 
 ## The three categories (why this proves the point)

@@ -17,7 +17,7 @@
 //   node run-exercises.mjs --dry-run       # print the plan, send nothing
 //
 // Config via env:
-//   BASE_URL   default http://localhost:8080/WebGoat
+//   BASE_URL   default http://localhost:8080   (WebGoat runs at root context "/")
 //   DELAY_MS   default 2500   (pause between routes so findings appear one by one)
 //   USERNAME   default contrast-demo-<timestamp>
 //   PASSWORD   default password
@@ -27,7 +27,7 @@ import { exercises } from "./exercises.mjs";
 // Playwright is imported lazily inside main() so that `--dry-run` works with no
 // dependencies installed (handy for validating the plan before npm install).
 
-const BASE_URL = (process.env.BASE_URL || "http://localhost:8080/WebGoat").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 const DELAY_MS = Number(process.env.DELAY_MS || 2500);
 const USERNAME = process.env.USERNAME || `contrast-demo-${Date.now()}`;
 const PASSWORD = process.env.PASSWORD || "password";

@@ -68,7 +68,7 @@ the `webgoat` namespace, deploys WebGoat, and — once it's ready — automatica
 port-forwarding and holds it open (Ctrl-C to stop). Then browse to:
 
 ```
-http://localhost:8080/WebGoat       (WebWolf at http://localhost:9090/WebWolf)
+http://localhost:8080/       (WebGoat at root context; WebWolf at http://localhost:9090/WebWolf)
 ```
 
 Set `PORT_FORWARD=0 ./scripts/setup.sh` to skip the auto-forward (e.g. in CI). You can
@@ -196,6 +196,19 @@ can be changed in the Helm values (and matched via `CONTRAST_APP_NAME` for clean
 
 `.env` is git-ignored and must never be committed, it contains your agent token and API
 credentials.
+
+## Root context path (Assess + ADR URL alignment)
+
+WebGoat is deployed at the **root context (`/`)** via `WEBGOAT_CONTEXT=/` in
+`manifests/10-webgoat.yaml`, not the default `/WebGoat`. With the default context,
+Contrast records two URLs per endpoint, the Spring route mapping (`/SqlInjection/attack2`)
+that Assess uses and the full request URI (`/WebGoat/SqlInjection/attack2`) that ADR/
+Protect attacks carry, so they don't line up in the UI. Serving at root makes the request
+URI equal the route mapping, so Assess findings and ADR attacks share one URL.
+
+If you change this, keep the demo scripts' `BASE_URL` in step (root = `http://localhost:8080`).
+Note that routes already recorded under the old `/WebGoat` prefix persist, clear routes
+(teardown, or `--mode reset` with admin) and re-exercise so only the clean URLs remain.
 
 ## Notes and accuracy
 

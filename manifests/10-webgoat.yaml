@@ -40,6 +40,12 @@ spec:
               value: "0.0.0.0"
             - name: WEBGOAT_PORT
               value: "8080"
+            # Serve WebGoat at the root context ("/") instead of the default "/WebGoat".
+            # This makes the request URI match the Spring route mapping, so Contrast
+            # Assess routes and ADR/Protect attack URLs line up (no "/WebGoat" prefix on
+            # one and not the other). Maps to server.servlet.context-path.
+            - name: WEBGOAT_CONTEXT
+              value: "/"
             - name: WEBWOLF_HOST
               value: "0.0.0.0"
             - name: WEBWOLF_PORT
@@ -56,14 +62,14 @@ spec:
               memory: "1536Mi"
           readinessProbe:
             httpGet:
-              path: /WebGoat/login
+              path: /login
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
           startupProbe:
             httpGet:
-              path: /WebGoat/login
+              path: /login
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 10

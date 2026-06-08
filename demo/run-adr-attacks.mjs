@@ -25,12 +25,12 @@
 //   node run-adr-attacks.mjs --dry-run    # print the plan, send nothing
 //
 // Config via env:
-//   BASE_URL   default http://localhost:8080/WebGoat
+//   BASE_URL   default http://localhost:8080   (WebGoat runs at root context "/")
 //   DELAY_MS   default 2500
 //   USERNAME   default contrast-adr-<timestamp>
 //   PASSWORD   default password
 
-const BASE_URL = (process.env.BASE_URL || "http://localhost:8080/WebGoat").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 const DELAY_MS = Number(process.env.DELAY_MS || 2500);
 const USERNAME = process.env.USERNAME || `contrast-adr-${Date.now()}`;
 const PASSWORD = process.env.PASSWORD || "password";

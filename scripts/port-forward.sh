@@ -29,7 +29,7 @@ if ! kubectl -n "$APP_NS" wait --for=condition=ready pod -l app=webgoat --timeou
 fi
 
 echo "==> WebGoat is up. Forwarding:"
-echo "      http://localhost:${WEBGOAT_PORT}/WebGoat   (WebGoat)"
+echo "      http://localhost:${WEBGOAT_PORT}/   (WebGoat, root context)"
 echo "      http://localhost:${WEBWOLF_PORT}/WebWolf   (WebWolf)"
 echo "    Ctrl-C to stop."
 echo
