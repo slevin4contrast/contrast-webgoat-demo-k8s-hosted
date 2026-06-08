@@ -136,7 +136,15 @@ node scripts/clear-contrast-ui.mjs --dry-run
 ```
 
 This step needs `CONTRAST_API_KEY` and `CONTRAST_AUTH_HEADER` in `.env`; without them
-it's skipped (teardown still completes). Set `CLEAR_UI=0` to skip it entirely. The
+it's skipped (teardown still completes). Set `CLEAR_UI=0` to skip it entirely.
+
+**Library safety:** teardown will not silently destroy library/CVE data. If
+`CONTRAST_CLEAR_MODE` is `reset` or `app` (the modes that purge libraries), teardown
+downgrades the cleanup to `issues` to preserve them, unless you explicitly set
+`CLEAR_ALLOW_LIBRARY_LOSS=1`. Library data is reported by the running agent, so if it
+ever does get purged, redeploy with `setup.sh` and exercise the app and it repopulates.
+
+As its final step, teardown also stops the port-forward started by `setup.sh`. The
 approach mirrors Contrast's [cargo-cats](https://github.com/Contrast-Security-OSS/cargo-cats)
 demo.
 
