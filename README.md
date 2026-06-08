@@ -42,6 +42,7 @@ scoped to a single namespace so this is safe to run on a shared cluster.
 |---|---|---|
 | Contrast Agent Operator (Helm release) | `contrast-agent-operator` | CRDs + operator + mutating webhook |
 | WebGoat Deployment + Service | `webgoat` | labeled `contrast-agent: java` for injection |
+| Networked HSQLDB (`webgoat-db`) | `webgoat` | HSQLDB in server mode, so DB traffic uses a TCP socket (not instrumented) |
 | Agent injectors | scoped to `webgoat` only | via `agentInjectors.namespaces` in the Helm values |
 
 Assess (IAST) and Protect (RASP/ADR) are both enabled in the agent configuration.
@@ -166,6 +167,7 @@ a guard against deploying into the wrong cluster.
 
 ```
 manifests/00-namespace.yaml                webgoat namespace
+manifests/05-webgoat-db.yaml               networked HSQLDB (server mode) so DB traffic uses a TCP socket
 manifests/10-webgoat.yaml                  WebGoat Deployment + Service (labeled for injection)
 helm/contrast-agent-operator.values.yaml   Helm values: cluster defaults + webgoat-scoped injectors
 kind-cluster.yaml                          throwaway kind cluster config (KIND=1)
@@ -209,6 +211,23 @@ URI equal the route mapping, so Assess findings and ADR attacks share one URL.
 If you change this, keep the demo scripts' `BASE_URL` in step (root = `http://localhost:8080`).
 Note that routes already recorded under the old `/WebGoat` prefix persist, clear routes
 (teardown, or `--mode reset` with admin) and re-exercise so only the clean URLs remain.
+
+## Networked database (DB traffic over a socket)
+
+By default WebGoat embeds HSQLDB in-process (a `file:`/`mem:` JDBC URL), so queries never
+leave the JVM. This repo instead runs HSQLDB in **server mode** as a separate pod
+(`manifests/05-webgoat-db.yaml`) and points WebGoat at it with
+`SPRING_DATASOURCE_URL=jdbc:hsqldb:hsql://webgoat-db:9001/webgoat`. Now every lesson query
+travels over a real TCP socket between the WebGoat pod and the DB pod.
+
+It's the same HSQLDB engine and dialect (2.7.4, matching WebGoat's Spring Boot BOM), so all
+lessons, Flyway migrations, and per-user schemas behave exactly as before, only the
+transport changes. Contrast SQL-injection detection is unchanged (Assess instruments the
+JDBC call regardless of transport); what you gain is a database backend node and an
+outbound DB connection in the Behavior/flow map. The connection is plain TCP, not TLS,
+which is fine for a lab and a fair talking point about unencrypted DB traffic. The DB runs
+in-memory and resets if its pod restarts; restart WebGoat too if that happens. The DB pod
+is not labeled for injection, so only the application is instrumented.
 
 ## Notes and accuracy
 

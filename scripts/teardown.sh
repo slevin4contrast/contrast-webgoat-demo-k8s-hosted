@@ -75,8 +75,10 @@ if [[ "$KIND" == "1" ]]; then
   kind delete cluster --name "$CLUSTER_NAME"
 else
   echo "==> Removing WebGoat namespace"
-  # Delete the AgentInjector effect first by removing the labeled workload, then ns.
+  # Delete the AgentInjector effect first by removing the labeled workload, then the DB,
+  # then the namespace (the namespace delete also cascades these).
   kubectl delete -f manifests/10-webgoat.yaml --ignore-not-found
+  kubectl delete -f manifests/05-webgoat-db.yaml --ignore-not-found
   kubectl delete -f manifests/00-namespace.yaml --ignore-not-found
 
   echo "==> Uninstalling Contrast Agent Operator Helm release"

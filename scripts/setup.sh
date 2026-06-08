@@ -78,6 +78,11 @@ kubectl -n "$OPERATOR_NS" rollout status deployment/contrast-agent-operator --ti
 # --- deploy WebGoat ----------------------------------------------------------
 echo "==> Deploying WebGoat"
 kubectl apply -f manifests/00-namespace.yaml
+
+echo "==> Deploying networked HSQLDB (so DB traffic uses a TCP socket)"
+kubectl apply -f manifests/05-webgoat-db.yaml
+kubectl -n "$APP_NS" rollout status deployment/webgoat-db --timeout=180s
+
 kubectl apply -f manifests/10-webgoat.yaml
 
 echo "==> Waiting for WebGoat to start (this also waits on agent injection)"

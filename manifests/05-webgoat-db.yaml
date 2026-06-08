@@ -1,0 +1,102 @@
+---
+# Networked HSQLDB (server mode) for WebGoat.
+#
+# Swaps WebGoat's default in-process HSQLDB for a separate database server, so the JDBC
+# connection -- and every SQL-injection lesson query -- travels over a real TCP socket to
+# this pod instead of staying inside the WebGoat JVM. Contrast then shows a database
+# backend node and an outbound DB connection in the Behavior/flow map.
+#
+# Same HSQLDB engine and dialect as the embedded default (version 2.7.4, matching WebGoat's
+# Spring Boot 3.4.3 BOM), so all lessons, Flyway migrations, and per-user schemas behave
+# identically -- only the transport changes.
+#
+# Notes: runs HSQLDB in-memory (data resets if this pod restarts; restart WebGoat too if
+# that happens). Plain TCP, not TLS -- fine for a lab, and a fair talking point about
+# unencrypted database traffic. This pod has no `contrast-agent` label, so the operator
+# does not instrument the database, only the application.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webgoat-db
+  namespace: webgoat
+  labels:
+    app: webgoat-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webgoat-db
+  template:
+    metadata:
+      labels:
+        app: webgoat-db
+    spec:
+      initContainers:
+        # Fetch the HSQLDB server jar (2.7.4, matching WebGoat) into a shared volume.
+        - name: fetch-hsqldb
+          image: curlimages/curl:8.11.1
+          command: ["sh", "-c"]
+          args:
+            - >-
+              curl -fsSL -o /libs/hsqldb.jar
+              https://repo1.maven.org/maven2/org/hsqldb/hsqldb/2.7.4/hsqldb-2.7.4.jar
+          volumeMounts:
+            - name: libs
+              mountPath: /libs
+      containers:
+        - name: hsqldb
+          # Matches WebGoat's JDK (23); multi-arch. Runs the HSQLDB server from the jar.
+          image: eclipse-temurin:23-jre
+          command:
+            - java
+            - -cp
+            - /libs/hsqldb.jar
+            - org.hsqldb.server.Server
+            - --address
+            - 0.0.0.0
+            - --port
+            - "9001"
+            - --database.0
+            - mem:webgoat
+            - --dbname.0
+            - webgoat
+            - --silent
+            - "false"
+          ports:
+            - name: hsqldb
+              containerPort: 9001
+          volumeMounts:
+            - name: libs
+              mountPath: /libs
+          readinessProbe:
+            tcpSocket:
+              port: 9001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: libs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webgoat-db
+  namespace: webgoat
+  labels:
+    app: webgoat-db
+spec:
+  type: ClusterIP
+  selector:
+    app: webgoat-db
+  ports:
+    - name: hsqldb
+      port: 9001
+      targetPort: 9001
