@@ -168,6 +168,7 @@ scripts/teardown.sh                        remove everything + clear the Contras
 scripts/clear-contrast-ui.mjs              clear findings / attacks / routes / Behavior via the Contrast API
 scripts/verify-findings.mjs                vet TPs vs FPs: cross-reference a route-coverage CSV against a source-grounded sink map
 docs/false-positives-vs-real-vulns.md      TP/FP analysis and the technique-based comparison
+docs/webgoat-vuln-classification.md        full v2025.3 lesson inventory: real vs simulated vs logic-only
 smartfix/smartfix.yml                      Contrast AI SmartFix GitHub Actions workflow (copy into a WebGoat source fork)
 smartfix/README.md                         SmartFix setup: API-only user, credentials, where it runs
 scripts/smartfix-preflight.mjs             validate Contrast creds + app id locally before the GitHub run (no secrets printed)
