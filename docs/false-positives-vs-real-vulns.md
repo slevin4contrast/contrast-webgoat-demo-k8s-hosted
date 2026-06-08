@@ -42,9 +42,13 @@ lesson-by-lesson inventory (every real, simulated, and logic-only lesson), see
 
 Two we deliberately do not overclaim:
 
-- **Stored XSS** (`/CrossSiteScriptingStored/stored-xss`) reports only if the stored
-  value reaches an HTML sink, which depends on rendering. Verify it on the instance
-  rather than asserting it.
+- **XSS** (reflected `CrossSiteScripting/attack5a`, stored `CrossSiteScriptingStored/stored-xss`,
+  DOM `phone-home-xss`) is **real** but rendered client-side. WebGoat is a single-page app:
+  your input comes back in a JSON response and the browser injects it into the DOM, so the
+  payload executes in the browser, not via a server-rendered HTML sink. Server-side Assess
+  therefore generally does not report it (Protect/ADR does detect the inbound payload as an
+  attack). Do not present WebGoat XSS as a scanner false positive, a browser-based scanner
+  would correctly flag it. See [`webgoat-vuln-classification.md`](webgoat-vuln-classification.md) (section A2).
 - **A systemic low-severity finding** may appear across many routes (in a sample export,
   a single "Note" finding showed up on most routes including the login and lesson-menu
   pages). That is a configuration-level finding, not a per-route result, and not a false
@@ -76,7 +80,9 @@ flag them.
 | `POST /SqlInjectionMitigations/attack10b` | runs a regex over the text you submit; no database call | no finding |
 | `POST /SqlInjectionMitigations/attack10a` | `String.contains` check on submitted text; no database call | no finding |
 | `POST /SSRF/task1` | compares your URL to fixed strings; never opens a connection | no finding |
-| `GET /CrossSiteScripting/attack5a` | succeeds on `String.contains("<script>")`; not a live HTML sink | no finding |
+
+(WebGoat's XSS lessons are intentionally left out of this table, they are real client-side
+XSS, not no-vuln lessons; see the XSS note above.)
 
 And one that is the same kind of feature coded safely, a true negative, not a miss:
 

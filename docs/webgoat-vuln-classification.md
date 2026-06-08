@@ -56,11 +56,32 @@ externally.
 | `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input` | Path traversal | user `fullName` / filename used to build the write path |
 | `GET /PathTraversal/random-picture` | Path traversal | `id` used to build a file path |
 | `POST /PathTraversal/zip-slip` | Zip slip (path traversal) | archive entry name used to write outside the target dir |
-| `POST /CrossSiteScriptingStored/stored-xss` | Stored XSS | comment stored then rendered (verify the render reaches an HTML sink) |
 
 True negative worth showing: `POST /SqlInjectionMitigations/attack12a` is the same kind
 of lookup written safely (fully parameterized `PreparedStatement`), so Contrast reports
 nothing. Exercising it and getting no finding is the point, not a miss.
+
+## A2. Real XSS, but rendered client-side (not a server-side Assess finding)
+
+WebGoat's XSS lessons are **real** XSS, the `<script>` / `<img onerror>` payloads execute
+in your browser. But WebGoat is a single-page app: the server returns your input inside a
+**JSON** response (`@ResponseBody`) and the browser's JavaScript injects it into the DOM.
+The dangerous render happens client-side, so a server-side runtime tool (Contrast Assess)
+has no server-rendered-HTML sink to trace and generally does not report these. A DAST or
+browser-based scanner, which sees the payload execute in the page, would correctly flag
+them, so these are **not** good "false positive" examples. Protect/ADR detects the inbound
+`<script>` payload as an XSS *attack* at the request layer, which is why XSS shows under
+Attacks but not as an Assess vulnerability.
+
+| Route | What's real | Why Assess is quiet |
+|---|---|---|
+| `GET /CrossSiteScripting/attack5a` | `field1` reflected into the cart HTML, executes in the DOM | returned as JSON `AttackResult`, rendered by the SPA |
+| `POST /CrossSiteScriptingStored/stored-xss` | comment with script stored, executes when the comment list renders | comments returned as `application/json`, rendered by the SPA |
+| `POST /CrossSiteScripting/phone-home-xss` (DOM) | DOM-based XSS executes entirely in the browser | no server-side sink at all |
+
+Verify on your instance: if no XSS *vulnerability* appears in Assess but XSS *attacks* do
+appear in Protect, that's expected for WebGoat's architecture, not a missed real bug on a
+server-rendered app.
 
 ## B. Simulated lessons (no vulnerable code — the WebGoat trap)
 
@@ -74,8 +95,7 @@ infers from the response can flag them.
 | `POST /SqlOnlyInputValidation/attack`, `/SqlOnlyInputValidationOnKeywords/attack` | `contains(" ")` / `replace` input-validation check; no query executes |
 | `POST /SqlInjectionAdvanced/attack6b` | `userid_6b.equals(password)`; the query is a constant |
 | `POST /SSRF/task1` | string-compares the URL to fixed values; never connects |
-| `GET /CrossSiteScripting/attack5a` | success on `String.contains("<script>")`; not a live sink |
-| `POST /CrossSiteScripting/attack1`, `/attack6a`, `/phone-home-xss`, `/dom-follow-up` | DOM/checkbox/string checks |
+| `POST /CrossSiteScripting/attack1`, `/attack6a`, `/dom-follow-up` | checkbox / route / success-message checks (the lesson's pass/fail gates) |
 | `POST /CrossSiteScripting/attack3`, `/attack4` | regex over submitted JSP / AntiSamy *code* (code-review checks) |
 | `POST /LogSpoofing/log-spoofing` | `replace("\n",...)` + `contains` check on echoed text; no logger sink |
 | `crypto/encoding/basic`, `/basic-auth`, `/xor`, `/secure/defaults`, `/signing/verify` | base64 / `.equals` / format checks (only `crypto/hashing` is a real weak-hash) |
