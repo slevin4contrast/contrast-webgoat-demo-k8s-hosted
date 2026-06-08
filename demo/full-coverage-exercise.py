@@ -1191,7 +1191,7 @@ def main():
     # Hit the scoreboard endpoint — read-only JSON, no vuln, but exercises the route.
     print("\n=== Scoreboard ===")
     try:
-        r = s.get(url("scoreboard-data"))
+        r = session.get(url("scoreboard-data"))
         print(f"  ✓ scoreboard-data: {len(r.json())} entries (status={r.status_code})")
     except Exception as e:
         print(f"  ? scoreboard-data: {e}")
