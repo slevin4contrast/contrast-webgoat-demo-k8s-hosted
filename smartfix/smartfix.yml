@@ -1,0 +1,113 @@
+# Contrast AI SmartFix workflow for WebGoat.
+#
+# IMPORTANT: this file does NOT belong in the k8s deploy repo. SmartFix edits
+# application SOURCE and opens pull requests, so it runs in a fork of the WebGoat
+# source repository (https://github.com/WebGoat/WebGoat). Copy this file to that
+# fork at .github/workflows/smartfix.yml.
+#
+# Prerequisites (see smartfix/README.md):
+#   - Contrast Assess enabled, with Critical/High findings on the app (run the
+#     functional-exercise script first so findings exist).
+#   - A Contrast API-only service user (Edit org role, View/Edit app access).
+#   - GitHub repo variables:  CONTRAST_HOST, CONTRAST_ORG_ID, CONTRAST_APP_ID
+#   - GitHub repo secrets:    CONTRAST_AUTHORIZATION_KEY, CONTRAST_API_KEY
+#   - This example uses the Contrast-hosted LLM (use_contrast_llm: true), so no
+#     separate LLM key is needed. Swap to Anthropic/Bedrock/Azure if you prefer.
+
+name: Contrast AI SmartFix
+
+on:
+  pull_request:
+    types:
+      - closed
+  schedule:
+    - cron: '0 0 * * *'   # daily; adjust or rely on manual runs for a demo
+  workflow_dispatch:        # lets you trigger it on demand during the demo
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run_smartfix:
+    name: SmartFix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The SmartFix action sets up Python and Node but NOT Java, so without this step
+      # the Maven build can't compile and SmartFix aborts on its initial build check.
+      # The JDK version MUST match the WebGoat version your fork is on:
+      #   - fork of `main` (WebGoat 2026.x)  -> java-version '25'
+      #   - branch from the v2025.3 tag      -> java-version '23'
+      # The v2025.3 tag matches the image this repo deploys, so it's the most coherent
+      # demo (same version running and being fixed). This JDK persists for the job.
+      - name: Set up JDK for the WebGoat build
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '23'
+
+      - name: Determine SmartFix Job Type
+        id: determine_job_name
+        shell: bash
+        run: |
+          if [[ "${{ github.event.pull_request.merged }}" == "true" ]]; then
+            echo "job_name=Notify Contrast on PR Merge" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.pull_request.merged }}" == "false" ]]; then
+            echo "job_name=Handle PR Close" >> $GITHUB_OUTPUT
+          else
+            echo "job_name=Run Contrast AI SmartFix - Generate Fixes" >> $GITHUB_OUTPUT
+          fi
+
+      - name: ${{ steps.determine_job_name.outputs.job_name }}
+        uses: Contrast-Security-OSS/contrast-ai-smartfix-action@v1
+        with:
+          # --- Build (WebGoat is Maven; the wrapper is in the repo) ---
+          # Compile + package only the app code. -Dmaven.test.skip=true skips BOTH
+          # compiling and running tests, which avoids a test-compile failure breaking the
+          # baseline build, and is fast. SmartFix still compiles each fix. Switch back to
+          # '... clean test' if you want test-verified fixes and the suite passes cleanly.
+          build_command: './mvnw -B -ntp clean package -Dmaven.test.skip=true'
+          base_branch: '${{ github.event.repository.default_branch }}'
+          # Verbose logging so the real Maven output shows in the Action log.
+          debug_mode: 'true'
+
+          # --- Keep a run inside the Gemini free-tier budget (~20 flash requests/day) ---
+          # Attempt only a couple of fixes per run, and skip writing a per-fix security
+          # test (that roughly halves the LLM calls per fix). Raise these once you have a
+          # paid LLM key. With 2 PRs already open, close/merge them before a fresh run,
+          # since max_open_prs counts currently-open SmartFix PRs.
+          max_open_prs: 2
+          skip_writing_security_test: 'true'
+
+          # --- GitHub token (auto-provided) ---
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # --- Contrast credentials (non-secrets as vars, keys as secrets) ---
+          contrast_host: ${{ vars.CONTRAST_HOST }}
+          contrast_org_id: ${{ vars.CONTRAST_ORG_ID }}
+          contrast_app_id: ${{ vars.CONTRAST_APP_ID }}
+          contrast_authorization_key: ${{ secrets.CONTRAST_AUTHORIZATION_KEY }}
+          contrast_api_key: ${{ secrets.CONTRAST_API_KEY }}
+
+          # --- LLM ---
+          # Option A (zero key): the Contrast-hosted model, IF your org is entitled to it.
+          #   use_contrast_llm: 'true'
+          #
+          # Option B (free, no AWS/Anthropic billing): Google Gemini via Google AI Studio.
+          # Get a key at https://aistudio.google.com/apikey, add it as the repo secret
+          # GEMINI_API_KEY, and use the three lines below.
+          use_contrast_llm: 'false'
+          # Google Gemini free tier (flash). Free tier allows ~20 flash requests/day,
+          # so keep max_open_prs low and skip_writing_security_test true (above) to fit.
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          agent_model: 'gemini/gemini-2.5-flash'
+          # Paid alternative for unlimited / better fixes (key as a GitHub secret):
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # agent_model: 'anthropic/claude-haiku-4-5-20251001'
+          #
+          # Option C: Anthropic / AWS Bedrock / Azure -- see smartfix/README.md and action.yml.

@@ -123,7 +123,7 @@ next run starts fresh. The behavior is controlled by `CONTRAST_CLEAR_MODE`:
 
 | Mode | Clears | Keeps | Role needed |
 |---|---|---|---|
-| `issues` (default) | findings, Protect attack incidents, route coverage | the app, **libraries** | Edit (route delete needs Admin, best-effort) |
+| `issues` (default) | vulnerabilities (classic + ns-ui), attack incidents, route coverage | the app, **libraries, CVE/SCA** | Edit (route delete needs Admin, best-effort) |
 | `reset` | **all** data incl. the Behavior/flow (Observe) tab and libraries | the app shell | Admin |
 | `app` | the entire application | nothing | Admin |
 
@@ -168,6 +168,9 @@ scripts/teardown.sh                        remove everything + clear the Contras
 scripts/clear-contrast-ui.mjs              clear findings / attacks / routes / Behavior via the Contrast API
 scripts/verify-findings.mjs                vet TPs vs FPs: cross-reference a route-coverage CSV against a source-grounded sink map
 docs/false-positives-vs-real-vulns.md      TP/FP analysis and the technique-based comparison
+smartfix/smartfix.yml                      Contrast AI SmartFix GitHub Actions workflow (copy into a WebGoat source fork)
+smartfix/README.md                         SmartFix setup: API-only user, credentials, where it runs
+scripts/smartfix-preflight.mjs             validate Contrast creds + app id locally before the GitHub run (no secrets printed)
 demo/run-exercises.mjs                     functional exercise run (benign input -> IAST findings)
 demo/exercises.mjs                         route catalog: vulnerable vs safe vs simulated
 demo/run-adr-attacks.mjs                   attack run (payloads -> Protect/ADR detection)

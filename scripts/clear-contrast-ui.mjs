@@ -3,15 +3,18 @@
 // Clear the WebGoat demo's data from the Contrast UI so the next run is fresh.
 //
 // Two modes (look up the application by name first, then act on each match):
-//   issues (default) -- clear the app's findings, Protect attack incidents, AND route
-//                        coverage, keeping the app registered and LIBRARIES INTACT.
-//                        Findings + incidents need only the Edit role; route-coverage
-//                        delete needs Admin, so it's best-effort (clean skip on 403).
-//                        Endpoints: DELETE .../issues?applicationId=  (vulnerabilities)
-//                                   POST   .../incidents (list by app) then
-//                                   DELETE .../incidents/{id}  (attack incidents)
-//                                   DELETE .../applications/{appId}/route  (route coverage, Admin)
-//                        Note: libraries are never touched, so SCA data persists.
+//   issues (default) -- clear vulnerabilities (in BOTH the classic and ns-ui/North Star
+//                        views), Protect attack incidents, and route coverage. KEEPS the
+//                        app, its LIBRARIES, and CVE/SCA data. Vulns + incidents need only
+//                        the Edit role; route-coverage delete needs Admin (best-effort,
+//                        clean skip on 403). Endpoints:
+//                          DELETE  /api/ns-ui/v1/.../issues?applicationId=     (ns-ui vulns)
+//                          GET     /api/ng/.../traces/{appId}/ids   then
+//                          DELETE  /api/ng/.../traces/{appId}  {traces:[...]}   (classic vulns)
+//                          POST    /api/ns-ui/v1/.../incidents (list) then
+//                          DELETE  /api/ns-ui/v1/.../incidents/{id}             (attacks/incidents)
+//                          DELETE  /api/ng/.../applications/{appId}/route       (routes, Admin)
+//                        Libraries / CVE / SCA endpoints are never called, so that data stays.
 //   reset            -- RESET the application: purge ALL of its data -- vulnerabilities,
 //                        libraries, route coverage, stats, and the Behavior/flow (Observe)
 //                        data -- while KEEPING the app, its license, and server links.
@@ -126,18 +129,49 @@ async function main() {
       ? "DELETE WHOLE APPLICATION (app + libraries + route coverage)"
       : mode === "reset"
         ? "RESET application (purge ALL data incl. Behavior/flow + libraries; keep app)"
-        : "clear findings + attack incidents + route coverage (libraries kept)";
+        : "clear vulns (classic + ns-ui) + attacks/incidents + routes; KEEP libraries + CVE/SCA";
   console.log(`Contrast cleanup (${action}) for app matching: "${appName}"`);
   console.log(`Org: ${orgId}  Base: ${baseUrl}${DRY_RUN ? "  (DRY RUN)" : ""}`);
 
   const okCode = (s) => [200, 202, 204, 404].includes(s);
 
-  // Clear vulnerabilities for an app (bulk, by application id). Libraries untouched.
+  // Clear vulnerabilities for an app in BOTH UIs. Libraries / CVE / SCA are never
+  // touched, so SCA data is preserved.
+  //   (a) ns-ui issues  -> the North Star "issues" view
+  //   (b) ng traces     -> the classic "Vulnerabilities" view (list UUIDs, then delete)
   async function clearIssues(appId) {
-    const url = `${baseUrl}/api/ns-ui/v1/organizations/${orgId}/issues?applicationId=${encodeURIComponent(appId)}`;
-    const res = await fetch(url, { method: "DELETE", headers });
-    console.log(`      issues:    HTTP ${res.status}${okCode(res.status) ? "" : "  " + (await res.text())}`);
-    return okCode(res.status);
+    let ok = false;
+
+    // (a) ns-ui issues (North Star)
+    const nsUrl = `${baseUrl}/api/ns-ui/v1/organizations/${orgId}/issues?applicationId=${encodeURIComponent(appId)}`;
+    const nsRes = await fetch(nsUrl, { method: "DELETE", headers });
+    console.log(`      issues(ns-ui):  HTTP ${nsRes.status}${okCode(nsRes.status) ? "" : "  " + (await nsRes.text())}`);
+    ok = okCode(nsRes.status) || ok;
+
+    // (b) ng traces (classic) -- list vulnerability UUIDs, then delete that set
+    const idsRes = await fetch(`${baseUrl}/Contrast/api/ng/${orgId}/traces/${encodeURIComponent(appId)}/ids`, { headers });
+    if (!idsRes.ok) {
+      console.log(`      vulns(classic): list failed HTTP ${idsRes.status} (skipping)`);
+      return ok;
+    }
+    const idsBody = await idsRes.json();
+    const rawIds = idsBody.traces || idsBody.trace_ids || idsBody.traceIds || (Array.isArray(idsBody) ? idsBody : []);
+    const ids = rawIds.map((t) => (typeof t === "string" ? t : t.uuid || t.trace_id || t.id)).filter(Boolean);
+    if (ids.length === 0) {
+      console.log("      vulns(classic): none");
+      return ok;
+    }
+    if (DRY_RUN) {
+      console.log(`      vulns(classic): ${ids.length} would be deleted`);
+      return true;
+    }
+    const delRes = await fetch(`${baseUrl}/Contrast/api/ng/${orgId}/traces/${encodeURIComponent(appId)}`, {
+      method: "DELETE",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ traces: ids }),
+    });
+    console.log(`      vulns(classic): deleted ${ids.length}  [HTTP ${delRes.status}]${okCode(delRes.status) ? "" : "  " + (await delRes.text())}`);
+    return okCode(delRes.status) || ok;
   }
 
   // Clear route coverage (classic UI "Route Coverage"). NOTE: this endpoint requires
