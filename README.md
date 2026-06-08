@@ -174,6 +174,7 @@ scripts/smartfix-preflight.mjs             validate Contrast creds + app id loca
 demo/run-exercises.mjs                     functional exercise run (benign input -> IAST findings)
 demo/exercises.mjs                         route catalog: vulnerable vs safe vs simulated
 demo/run-adr-attacks.mjs                   attack run (payloads -> Protect/ADR detection)
+demo/full-coverage-exercise.py             alternative: solves nearly every lesson for max route coverage (Python)
 demo/README.md                             demo script details
 .env.example                              configuration template (copy to .env)
 ```

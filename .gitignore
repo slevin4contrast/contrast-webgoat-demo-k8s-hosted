@@ -6,6 +6,10 @@ contrast-agent-operator.local.yaml
 # Node deps for the demo scripts (package-lock.json IS committed for reproducible installs)
 demo/node_modules/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # OS / editor cruft
 .DS_Store
 *.swp

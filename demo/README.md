@@ -104,6 +104,33 @@ mode Contrast blocks them (HTTP 403/406). The script prints the status and wheth
 was likely blocked. Use the benign `run-exercises.mjs` to show IAST finding flaws from
 normal use, and this script to show Protect catching active attacks.
 
+## Full coverage exercise (alternative)
+
+`full-coverage-exercise.py` is a heavier alternative to `run-exercises.mjs`. Instead of a
+curated set of benign requests, it **solves nearly every WebGoat lesson** with its real
+solution, which drives the full set of lesson routes. Use it to maximize Contrast route
+coverage and populate findings broadly before a demo (the eval's pre-work expectation).
+
+```bash
+pip install requests PyJWT cryptography
+python3 full-coverage-exercise.py
+```
+
+Config via env: `WEBGOAT_BASE`, `WEBWOLF_BASE`, `WEBGOAT_USER`, `WEBGOAT_PASS`.
+
+Pick the right tool for the moment:
+
+- `run-exercises.mjs` -- benign input, curated routes. The headline IAST story ("no
+  attack needed"). Use this on the call.
+- `full-coverage-exercise.py` -- solves lessons (real exploit payloads) to maximize
+  route coverage and breadth. Use this to populate the dashboard ahead of time.
+- `run-adr-attacks.mjs` -- attack payloads to light up Protect/ADR.
+
+It targets WebGoat v2025.3 (the version this repo deploys); lessons that only exist on
+newer WebGoat were removed so every call hits a real route. Because it solves lessons,
+it sends real exploit payloads, so treat it like the ADR attack run, only against your
+own lab.
+
 ## Notes
 
 - Endpoints, parameters, and code behavior were verified against WebGoat **v2025.3**
