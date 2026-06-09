@@ -30,7 +30,15 @@ actually works, and OWASP WebGoat specifically exposes the gap:
    fake lessons because no vulnerable code ran. That's the false-positive story: you
    don't triage noise Contrast never generates.
 
-The demo scripts make both points visible, see [Functional exercise vs. attack run](#two-ways-to-drive-the-app).
+The demo scripts make both points visible, see [Ways to drive the app](#ways-to-drive-the-app).
+For the full, source-grounded breakdown of which lessons are real vs. simulated (and the XSS
+nuance: the SPA lesson XSS is real but client-side so it shows under Protect attacks, while the
+server-side WebWolf mail stored XSS does show as an Assess finding), see
+[`docs/webgoat-vuln-classification.md`](docs/webgoat-vuln-classification.md). If a prospect asks
+"why did Contrast flag this and not that," the decision logic (reports when tainted data reaches
+a real sink at runtime; stays silent when code didn't run, was neutralized, renders client-side,
+isn't a dataflow class, or the lesson is simulated) is laid out in
+[`docs/false-positives-vs-real-vulns.md`](docs/false-positives-vs-real-vulns.md#why-contrast-reports-a-finding-or-stays-silent-the-mental-model).
 
 ## How it works
 
@@ -52,6 +60,7 @@ Assess (IAST) and Protect (RASP/ADR) are both enabled in the agent configuration
 - `kubectl`, `helm` (3.11+), and a Kubernetes cluster. `kind` is only needed if you use
   the throwaway-cluster path (recommended).
 - `node` 18+ (for the demo scripts and the Contrast UI cleanup helper).
+- `python3` only if you use the full-coverage script (`pip install requests PyJWT cryptography`).
 - A Contrast **Agent Token** (one base64 string from the Contrast UI, under the Java
   agent setup / agent keys page).
 - Optional, for the teardown UI cleanup: a Contrast **API Key** and **Authorization
@@ -87,28 +96,36 @@ Confirm instrumentation:
 kubectl -n webgoat logs deployment/webgoat | grep -i contrast
 ```
 
-## Two ways to drive the app
+## Ways to drive the app
 
-Both scripts live in `demo/`. Run `npm install` once, then:
+Three drivers in `demo/`, each for a different point:
 
 ```bash
 cd demo
-node run-exercises.mjs      # FUNCTIONAL exercise: benign input, IAST finds the flaws
-node run-adr-attacks.mjs    # ATTACK run: real payloads, Protect/ADR detects them
+npm install                      # one time, for the two Node scripts
+node run-exercises.mjs           # FUNCTIONAL exercise: benign input, IAST finds the flaws
+node run-adr-attacks.mjs         # ATTACK run: real payloads, Protect/ADR detects them
+python3 full-coverage-exercise.py  # SOLVE every lesson: maximize route coverage (Python)
 ```
 
-`run-exercises.mjs` sends normal, benign input to a catalog of routes tagged
-`VULNERABLE`, `SAFE`, or `SIMULATED`. Because Contrast instruments the code, the
-vulnerable routes are reported with no attack payload, the safe (parameterized) routes
-produce nothing (a true negative), and the simulated WebGoat lessons produce nothing
-(the false-positive story). This is the headline IAST demonstration.
+`run-exercises.mjs` is the headline IAST demonstration. It sends normal, benign input to
+a curated catalog of routes tagged `VULNERABLE`, `SAFE`, or `SIMULATED`. Because Contrast
+instruments the code, the vulnerable routes are reported with no attack payload, the safe
+(parameterized) routes produce nothing (a true negative), and the simulated WebGoat
+lessons produce nothing (the false-positive story).
 
-`run-adr-attacks.mjs` (bonus) is the mirror image: it sends canonical attack payloads
-(SQLi, reflected XSS, path traversal, XXE) so Contrast Protect detects them at runtime
-and they appear under the Attacks view. With Protect rules in monitor mode the requests
-return normally and are logged; in block mode they're blocked (HTTP 403/406).
+`run-adr-attacks.mjs` (bonus) is the mirror image: it sends real attack payloads (SQLi,
+XSS, path traversal, XXE, and more) so Contrast Protect detects them at runtime and they
+appear under the Attacks view. In monitor mode requests return normally and are logged;
+in block mode they're blocked (HTTP 403/406).
 
-Add `--dry-run` to either script to print the plan without sending anything. See
+`full-coverage-exercise.py` *solves* nearly every WebGoat lesson with its real solution,
+which drives the full set of routes (about 180 of 183, the rest are framework interceptor
+hooks with no URL to hit). Use it to maximize Contrast route coverage and populate findings
+broadly before a demo. Because it solves lessons it sends real exploit payloads, so treat
+it like the attack run, against your own lab.
+
+Add `--dry-run` to either Node script to print the plan without sending anything. See
 [`demo/README.md`](demo/README.md) for details and configuration.
 
 ## Teardown and resetting for a fresh demo

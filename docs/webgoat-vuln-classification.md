@@ -8,7 +8,10 @@ guessing from responses.
 
 This is the complete reference inventory. For the narrative version (how we vet true
 positives, and the false-positive classes each tool technique produces), see
-[`false-positives-vs-real-vulns.md`](false-positives-vs-real-vulns.md).
+[`false-positives-vs-real-vulns.md`](false-positives-vs-real-vulns.md). For the one-paragraph
+mental model of why Contrast reports a finding or stays silent, see the
+["Why Contrast reports a finding, or stays silent"](false-positives-vs-real-vulns.md#why-contrast-reports-a-finding-or-stays-silent-the-mental-model)
+section there.
 
 Each row was checked against the WebGoat v2025.3 source. Three buckets:
 
@@ -43,6 +46,13 @@ externally.
 | `POST /SqlInjectionAdvanced/attack6a` | last name concatenated |
 | `GET /SqlInjectionMitigations/servers` | sort `column` concatenated into `ORDER BY` |
 | `POST /SqlInjectionAdvanced/login`, `POST /challenge/5` | login-bypass SQLi challenge |
+| `POST /SqlOnlyInputValidation/attack` | **input-validation "mitigation" that is still vulnerable** — rejects spaces, then calls `SqlInjectionLesson6a.injectableQuery()`, which concatenates into `executeQuery`. The filter is bypassable; the sink is real. |
+| `POST /SqlOnlyInputValidationOnKeywords/attack` | same pattern — strips `FROM`/`SELECT`, then the same concatenated `executeQuery`. Validation is not parameterization, and Contrast traces straight through the filter to the sink. |
+
+The two `SqlOnlyInputValidation*` rows are a strong demo moment: the lesson *looks* mitigated
+(it validates input) but the underlying query is still built by string concatenation, so the
+vulnerability is real and Contrast reports it. A tool that judged "input is validated, so it's
+safe" would miss it. (Verified in v2025.3 source: both delegate to `injectableQuery`.)
 
 ### Other injection / crypto / runtime classes
 
@@ -54,14 +64,56 @@ externally.
 | `GET /crypto/hashing/md5`, `/crypto/hashing/sha256`, `POST /crypto/hashing` | Weak cryptography | `MessageDigest` with MD5 / SHA-1 |
 | `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
 | `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input` | Path traversal | user `fullName` / filename used to build the write path |
+| `POST /PathTraversal/profile-upload-fix` | Path traversal (incomplete fix) | the "fix" is a single-pass `fullName.replace("../","")`, which `....//` defeats, so the sink is still reachable (verified in v2025.3 source) |
 | `GET /PathTraversal/random-picture` | Path traversal | `id` used to build a file path |
 | `POST /PathTraversal/zip-slip` | Zip slip (path traversal) | archive entry name used to write outside the target dir |
+| `POST /WebWolf/fileupload` | Path traversal | uploaded filename builds the stored path (WebWolf module) |
+
+Findings reported in the 2026-06-09 export but not source-verified here (open the trace in
+the UI to see the exact sink): SQL Injection on `/SqlInjectionAdvanced/register` and
+`/register.mvc` (registration), and the WebWolf stored XSS below. Each carries its own
+request + dataflow proof in Contrast, which is itself ground truth.
+
+### Configuration and code-level findings Assess also reports
+
+These are real findings the agent raises beyond the injection/dataflow headline. They are not
+false positives, but they are lower severity and partly app-wide. Confirm each in the UI.
+
+| Class | Where it showed (2026-06-09 export) | Note |
+|---|---|---|
+| Log Injection (Note) | `/WebWolf/landing/password-reset`, `/WebWolf/fileupload`, `/register.mvc` | untrusted input reaches a logging call. This is *not* the `LogSpoofing` lesson (that one is a string check, see bucket B) — it's incidental logging elsewhere. |
+| Hardcoded Password (Medium) | code-level (no single route) | credential literal in source |
+| Weak Random Number Generation (Note) | `/challenge/7`, `/csrf/basic-get-flag`, `crypto/*` | `java.util.Random` used where security-relevant |
+| Unchecked Spring Autobinding (Medium) | `/registration`, `/PasswordReset/reset/change-password` | mass-assignment / over-binding |
+| Insecure Encryption Algorithms (Note) | `/WebWolf/jwt/encode` | weak/!AEAD cipher use |
+| Insecure Hash Algorithms (Medium) | `/crypto/hashing/md5`, `/login` | MD5 / SHA-1 |
+| Header & cookie hygiene (Note/Medium) | app-wide | CSP, HSTS, X-Content-Type-Options, X-XSS-Protection, anti-clickjacking, anti-caching, autocomplete, `secure` cookie flag, parameter pollution |
 
 True negative worth showing: `POST /SqlInjectionMitigations/attack12a` is the same kind
 of lookup written safely (fully parameterized `PreparedStatement`), so Contrast reports
 nothing. Exercising it and getting no finding is the point, not a miss.
 
-## A2. Real XSS, but rendered client-side (not a server-side Assess finding)
+### Three real routes that can show no finding (coverage notes, not detection gaps)
+
+In the 2026-06-09 run these three real-sink routes had no finding. None is a Contrast miss:
+
+- `GET /SqlInjectionMitigations/servers` — real `order by " + column` concatenation, but
+  `column` is a **required** request param. The earlier full-coverage solver hit the route
+  with no `column`, so WebGoat returned HTTP 400 and the sink never ran. Fixed in
+  `demo/full-coverage-exercise.py` (now sends `?column=hostname`); it fires after the fix.
+- `POST /VulnerableComponents/attack1` — the bundled **XStream 1.4.5 is incompatible with
+  JDK 11+** (WebGoat v2025.3 runs JDK 23), so `XStream.fromXML` throws during converter init
+  and the route returns 500. The vulnerable path can't fully execute on this runtime, so
+  Assess does not raise a dataflow finding (correctly, it didn't run). The vulnerable library
+  still appears in Runtime SCA / libraries, which is the right place to show it.
+- `POST /SSRF/task2` — `new URL(url).openStream()` only runs when `url` exactly matches
+  `http://ifconfig.pro`; the solver sends that, so the sink is invoked. If the pod has no
+  outbound network the call throws and WebGoat still returns success. Check the UI
+  vulnerabilities list directly: like the WebWolf finding, an SSRF finding may exist without
+  being attached to this route in the route-coverage export. Give the pod egress (or point
+  the URL at an in-cluster address) if you need the outbound call to complete cleanly.
+
+## A2. XSS: client-side lessons (Assess quiet) vs. the server-side WebWolf mail finding (Assess reports)
 
 WebGoat's XSS lessons are **real** XSS, the `<script>` / `<img onerror>` payloads execute
 in your browser. But WebGoat is a single-page app: the server returns your input inside a
@@ -79,9 +131,18 @@ Attacks but not as an Assess vulnerability.
 | `POST /CrossSiteScriptingStored/stored-xss` | comment with script stored, executes when the comment list renders | comments returned as `application/json`, rendered by the SPA |
 | `POST /CrossSiteScripting/phone-home-xss` (DOM) | DOM-based XSS executes entirely in the browser | no server-side sink at all |
 
-Verify on your instance: if no XSS *vulnerability* appears in Assess but XSS *attacks* do
-appear in Protect, that's expected for WebGoat's architecture, not a missed real bug on a
-server-rendered app.
+**Important exception — WebWolf mail stored XSS, which Assess DOES report.** Separate from the
+SPA lessons above, the 2026-06-09 export contains a real **Stored Cross-Site Scripting**
+finding (High) on `GET /WebWolf/mail`. WebWolf's mailbox renders the attacker-controlled email
+body **server-side** into HTML, so there is a real server-rendered sink and Contrast Assess
+traces it. So the accurate statement is: Assess stays quiet on the *client-side SPA lesson* XSS,
+but it does report the *server-side* stored XSS in the WebWolf mail viewer. Do not tell a
+prospect "Assess never reports XSS in WebGoat" — it reports this one. (Confirmed by the Contrast
+trace; open the finding to see the render sink.)
+
+Verify on your instance: if no XSS *vulnerability* appears in Assess for the SPA lesson routes
+but XSS *attacks* do appear in Protect, that's expected for WebGoat's architecture, not a missed
+real bug — while the WebWolf mail stored XSS should appear as an Assess vulnerability.
 
 ## B. Simulated lessons (no vulnerable code — the WebGoat trap)
 
@@ -92,12 +153,11 @@ infers from the response can flag them.
 | Route(s) | What it actually does |
 |---|---|
 | `POST /SqlInjectionMitigations/attack10a`, `/attack10b` | regex / `contains` over *submitted code text*; no DB call |
-| `POST /SqlOnlyInputValidation/attack`, `/SqlOnlyInputValidationOnKeywords/attack` | `contains(" ")` / `replace` input-validation check; no query executes |
 | `POST /SqlInjectionAdvanced/attack6b` | `userid_6b.equals(password)`; the query is a constant |
 | `POST /SSRF/task1` | string-compares the URL to fixed values; never connects |
 | `POST /CrossSiteScripting/attack1`, `/attack6a`, `/dom-follow-up` | checkbox / route / success-message checks (the lesson's pass/fail gates) |
 | `POST /CrossSiteScripting/attack3`, `/attack4` | regex over submitted JSP / AntiSamy *code* (code-review checks) |
-| `POST /LogSpoofing/log-spoofing` | `replace("\n",...)` + `contains` check on echoed text; no logger sink |
+| `POST /LogSpoofing/log-spoofing` | `replace("\n",...)` + `contains` check on echoed text; no logger sink. **Note:** this *lesson* is simulated, but real Log Injection findings appear elsewhere in the app (WebWolf, registration) where input genuinely reaches a logger — see bucket A. |
 | `crypto/encoding/basic`, `/basic-auth`, `/xor`, `/secure/defaults`, `/signing/verify` | base64 / `.equals` / format checks (only `crypto/hashing` is a real weak-hash) |
 | Quizzes: `cia/quiz`, `SqlInjectionAdvanced/quiz`, `CrossSiteScripting/quiz`, `JWT/quiz`, `HttpBasics/attack2` | multiple-choice answer comparison |
 | `HttpBasics/attack1`, `ChromeDevTools/*`, `HttpProxies/*`, `SecurePasswords/assignment`, `lesson-template/*`, `BypassRestrictions/*`, `ClientSideFiltering/*`, `HtmlTampering/task` | teaching/echo/validation checks |

@@ -44,6 +44,12 @@ const ROUTES = {
   "/SqlInjection/assignment5b":       ["real", "SQL Injection (userid concatenated; login_count bound)"],
   "/SqlInjectionAdvanced/attack6a":   ["real", "SQL Injection (concatenated)"],
   "/SqlInjectionMitigations/servers": ["real", "SQL Injection (ORDER BY column concatenated)"],
+  // Input-validation "mitigation" lessons: they filter the input (reject spaces, strip
+  // FROM/SELECT) and THEN call SqlInjectionLesson6a.injectableQuery(), which concatenates
+  // into Statement.executeQuery. The filter is bypassable; the sink is real. Source:
+  // sqlinjection/mitigation/SqlOnlyInputValidation*.java -> advanced/SqlInjectionLesson6a.java (v2025.3).
+  "/SqlOnlyInputValidation/attack":            ["real", "SQL Injection (validation filter, then concatenated executeQuery via lesson6a)"],
+  "/SqlOnlyInputValidationOnKeywords/attack":  ["real", "SQL Injection (keyword filter, then concatenated executeQuery via lesson6a)"],
   // Other injection / runtime classes
   "/xxe/simple":                      ["real", "XML External Entity"],
   "/xxe/blind":                       ["real", "XML External Entity (blind)"],
@@ -52,8 +58,24 @@ const ROUTES = {
   "/VulnerableComponents/attack1":    ["real", "Vulnerable component (XStream.fromXML)"],
   "/crypto/hashing/md5":              ["real", "Weak cryptography (MD5)"],
   "/SSRF/task2":                      ["real", "SSRF (URL.openStream on user input)"],
-  // Real sink but render-dependent -- verify on the instance, do not overclaim
-  "/CrossSiteScriptingStored/stored-xss": ["real?", "Stored XSS (reports only if rendered to an HTML sink)"],
+  // Path traversal: user-controlled filename / fullName / archive-entry builds the path.
+  // profile-upload-fix is included on purpose: its "fix" is a single-pass
+  // fullName.replace("../","") which "....//" defeats, so the sink is still reachable
+  // (source: pathtraversal/ProfileUploadFix.java, v2025.3 -- verified).
+  "/PathTraversal/profile-upload":                  ["real", "Path traversal (fullName builds write path)"],
+  "/PathTraversal/profile-upload-fix":              ["real", "Path traversal (single-pass ../ strip is bypassable)"],
+  "/PathTraversal/profile-upload-remove-user-input":["real", "Path traversal (filename builds write path)"],
+  "/PathTraversal/zip-slip":                        ["real", "Zip slip (archive entry name written outside target dir)"],
+  // Real sink but render-dependent -- verify on the instance, do not overclaim.
+  // The WebGoat *lesson* XSS routes return JSON and render in the SPA (client-side), so
+  // server-side Assess generally stays quiet -- see docs/webgoat-vuln-classification.md (A2).
+  "/CrossSiteScriptingStored/stored-xss": ["real?", "Lesson stored XSS, rendered client-side in the SPA; Assess usually silent"],
+  "/CrossSiteScripting/attack5a":         ["real?", "Lesson reflected XSS, rendered client-side in the SPA; Assess usually silent"],
+  // WebWolf routes -- confirmed by the Contrast runtime trace in the 2026-06-09 export
+  // (open the finding to see the exact sink). WebWolf is a separate module; these are not
+  // mapped from a source line here, they are the agent's observed dataflow.
+  "/WebWolf/mail":                    ["real", "Stored XSS (WebWolf mail renders attacker-controlled body server-side)"],
+  "/WebWolf/fileupload":              ["real", "Path traversal (uploaded filename builds the stored path)"],
   // Safe by design -- a finding here is a candidate false positive
   "/SqlInjectionMitigations/attack12a": ["safe", "Fully parameterized PreparedStatement"],
   "/SqlInjectionAdvanced/attack6b":     ["safe", "Param compared with .equals(); query is constant"],
@@ -61,7 +83,25 @@ const ROUTES = {
   "/SqlInjectionMitigations/attack10b": ["simulated", "Regex check over submitted text; no SQL runs"],
   "/SqlInjectionMitigations/attack10a": ["simulated", "String.contains check; no SQL runs"],
   "/SSRF/task1":                        ["simulated", "String compare; never opens a connection"],
-  "/CrossSiteScripting/attack5a":       ["simulated", "String.contains(\"<script>\") check"],
+};
+
+// Why a real-sink route can show no finding in a given export. These are operational
+// (coverage / environment / architecture) reasons, NOT Contrast detection gaps. Printed
+// next to each route in the "REAL ROUTES EXERCISED WITH NO FINDING" section so the output
+// explains itself. See docs/false-positives-vs-real-vulns.md ("the mental model").
+const NO_FINDING_REASON = {
+  "/SqlInjectionMitigations/servers":
+    "coverage: `column` is a required param; without it WebGoat returns 400 and the sink never runs (solver now sends ?column=).",
+  "/VulnerableComponents/attack1":
+    "code never ran: XStream 1.4.5 can't init on JDK 23, route 500s before fromXML completes. The vulnerable library still shows in Runtime SCA.",
+  "/SSRF/task2":
+    "environment/attribution: openStream only fires for url==http://ifconfig.pro; no egress means it can't complete. Check the vulnerabilities list directly.",
+  "/CrossSiteScriptingStored/stored-xss":
+    "no server-side sink: SPA renders the comment client-side from JSON; Protect catches the payload, Assess has nothing server-side to trace.",
+  "/CrossSiteScripting/attack5a":
+    "no server-side sink: reflected XSS rendered client-side in the SPA; expected quiet in Assess.",
+  "/WebWolf/mail":
+    "attribution: the WebWolf stored XSS is real and in the vulnerabilities export, but WebWolf is a separate context and route coverage may not attach it here.",
 };
 
 // A finding ID seen on at least this many distinct routes, or on any infra route,
@@ -184,8 +224,13 @@ function main() {
   if (fps.length === 0) console.log("  none -- no findings on any safe or simulated route.");
   for (const f of fps) console.log(`  !!  [${f.kind}] ${f.path}\n        ${f.desc}\n        ${f.ids.map(sev).join(", ")}  <-- INVESTIGATE`);
 
-  console.log(`\nREAL ROUTES EXERCISED WITH NO FINDING  (${noFinding.length})  -- coverage / verify`);
-  for (const n of noFinding) console.log(`  --  ${n.path}  (${n.desc})`);
+  // De-dupe by path (the CSV can have several rows for one route) and explain each.
+  const noFindingUniq = [...new Map(noFinding.map((n) => [n.path, n])).values()];
+  console.log(`\nREAL ROUTES EXERCISED WITH NO FINDING  (${noFindingUniq.length})  -- not a detection gap; see reason`);
+  for (const n of noFindingUniq) {
+    console.log(`  --  ${n.path}  (${n.desc})`);
+    if (NO_FINDING_REASON[n.path]) console.log(`        why: ${NO_FINDING_REASON[n.path]}`);
+  }
 
   const sysIds = [...systemic];
   console.log(`\nSYSTEMIC / APP-WIDE FINDINGS  (${sysIds.length})  -- confirm these are real config findings, not per-route FPs`);

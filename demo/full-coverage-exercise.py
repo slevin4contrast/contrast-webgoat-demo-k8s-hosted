@@ -239,7 +239,10 @@ def solve_sql_injection_advanced():
 
 def solve_sql_injection_mitigations():
     start_lesson("SqlInjectionMitigations")
-    session.get(url("SqlInjectionMitigations/servers"))
+    # /servers concatenates the REQUIRED `column` param into "... order by " + column.
+    # Without the param WebGoat returns HTTP 400 and the sink never runs (no finding).
+    # A benign column name is enough for Assess to trace request -> concatenated query.
+    session.get(url("SqlInjectionMitigations/servers"), params={"column": "hostname"})
     check("SqlInjectionMitigations/attack10a", {
         "field1": "getConnection", "field2": "PreparedStatement prep",
         "field3": "prepareStatement", "field4": "?", "field5": "?",

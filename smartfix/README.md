@@ -22,7 +22,9 @@ application: the same app whose findings your `demo/run-exercises.mjs` run produ
 - The app is Java (supported). SmartFix supports Java, .NET Core/Framework, Node.js, Python.
 - A GitHub fork of WebGoat that uses GitHub Actions.
 - A Contrast API-only service user (below).
-- An LLM. The workflow defaults to the Contrast-hosted LLM, so no extra key is required.
+- An LLM. This workflow uses **Google Gemini (free tier)** by default; get a key at
+  https://aistudio.google.com/apikey. You can swap to your own Anthropic/Bedrock/Azure
+  key, or the Contrast-hosted LLM if your org is entitled (see LLM options below).
 
 ## Step 1 — create a Contrast API-only user
 
@@ -62,9 +64,11 @@ Variables (not secret):
 Secrets:
 - `CONTRAST_AUTHORIZATION_KEY`
 - `CONTRAST_API_KEY`
+- `GEMINI_API_KEY` (the workflow's default LLM; or the key for whichever LLM you choose)
 
-`GITHUB_TOKEN` is provided automatically. If you switch off the Contrast LLM, add your
-LLM key as a secret too (e.g. `ANTHROPIC_API_KEY`).
+`GITHUB_TOKEN` is provided automatically. Paste each secret directly into the GitHub
+field, do not pipe through your clipboard, since the `base64` tool appends a newline and a
+trailing `\n` in the Authorization header breaks Contrast API auth.
 
 ## Step 3.5 — validate the credentials locally (recommended)
 
@@ -82,31 +86,50 @@ secret values. Fix anything it flags before continuing.
 ## Step 4 — add the workflow
 
 Copy `smartfix.yml` from this folder into the fork at `.github/workflows/smartfix.yml`,
-commit it to the default branch. The workflow sets up **JDK 23 (Temurin)** before the
-SmartFix step, because WebGoat v2025.3 builds with Java 23 and the SmartFix action does
-not install Java itself. Without that step the initial build fails immediately. The
-`build_command` is `./mvnw -B -ntp clean test`. WebGoat's test run is slow; if a specific
-unit test is flaky in CI you can fall back to `./mvnw -B -ntp clean package -DskipTests`
-to get unblocked (SmartFix still compiles its fix, it just won't run tests).
+commit it to the default branch. Key things the workflow already handles, learned the
+hard way:
+
+- **JDK setup.** The SmartFix action installs Python and Node but not Java, so the
+  workflow adds a `setup-java` step. The version MUST match the WebGoat version your fork
+  is on: **23** for a branch off the `v2025.3` tag (matches the image this repo deploys),
+  **25** for `main` (WebGoat 2026.x). Wrong JDK = "release version NN not supported".
+- **Build command** is `./mvnw -B -ntp clean package -Dmaven.test.skip=true` — compiles
+  the app without compiling/running tests, which gives a reliable green baseline (SmartFix
+  requires the build to pass before it generates fixes). `debug_mode: true` is on so the
+  real Maven output shows if a build fails.
+
+Tip: base the fork on the `v2025.3` tag so the source matches the running app, then use
+JDK 23.
 
 ## Step 5 — run it and review
 
 Trigger it from the Actions tab (workflow_dispatch) or wait for the daily schedule. It
-will open PRs on branches named `smartfix/remediation-...`, one per fix, up to
-`max_open_prs`. Review and test each PR, then merge. On merge, the workflow's PR-close
-path notifies Contrast. Always review and test SmartFix PRs before merging.
+opens PRs on branches named `smartfix/remediation-...`, one per fix, up to `max_open_prs`
+(set to 2 here to stay within the Gemini free tier). Review and test each PR, then merge.
+On merge, the workflow's PR-close path notifies Contrast. Always review and test SmartFix
+PRs before merging. Also enable Settings > Actions > General > "Allow GitHub Actions to
+create and approve pull requests", or the run can't open PRs.
 
 For the demo, a clean arc is: show the Critical SQLi findings in Contrast, trigger
-SmartFix, open the generated PR and walk the diff plus the security test it adds, merge,
-and show Contrast acknowledging the remediation.
+SmartFix, open the generated PR and walk the diff, merge, and show Contrast acknowledging
+the remediation. (The workflow sets `skip_writing_security_test: true` to conserve free-
+tier LLM calls; drop that if you want SmartFix to add a security test per fix.)
 
 ## LLM options
 
-The workflow uses `use_contrast_llm: 'true'` (Contrast-hosted model), the simplest path.
-To bring your own, set `use_contrast_llm: 'false'` and supply one of: an Anthropic key
-with `agent_model: 'anthropic/claude-sonnet-4-5-20250929'`, AWS Bedrock credentials, or
-Azure OpenAI. See the action inputs at
-https://github.com/Contrast-Security-OSS/contrast-ai-smartfix-action/blob/main/action.yml.
+The workflow defaults to **Google Gemini, free tier** (`use_contrast_llm: 'false'`,
+`agent_model: 'gemini/gemini-2.5-flash'`, key in `GEMINI_API_KEY`). Notes:
+
+- The free tier allows roughly **20 flash requests/day**, and SmartFix uses several per
+  fix, so a run produces a couple of PRs then hits the quota. That's why `max_open_prs` is
+  2 and `skip_writing_security_test` is true. Space runs across days, or enable billing.
+- **gemini-2.5-pro is NOT on the free tier** (limit 0) — use flash, or a paid key for pro.
+- To bring your own: set the relevant key and `agent_model` for Anthropic
+  (`anthropic/claude-haiku-4-5-20251001` is cheap; sonnet for better fixes), AWS Bedrock,
+  or Azure, or `use_contrast_llm: 'true'` if your org is entitled to the Contrast LLM. See
+  https://github.com/Contrast-Security-OSS/contrast-ai-smartfix-action/blob/main/action.yml.
+
+Validate creds first with `node scripts/smartfix-preflight.mjs` (Step 3.5).
 
 ## Important notes
 

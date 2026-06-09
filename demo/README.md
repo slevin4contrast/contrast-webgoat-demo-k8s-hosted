@@ -12,11 +12,11 @@ up, safe routes stay quiet, and the simulated WebGoat lessons stay quiet too.
 
 ## Run it
 
-WebGoat must be up and reachable (port-forward from the cluster):
-
-```bash
-kubectl -n webgoat port-forward svc/webgoat 8080:8080 9090:9090
-```
+WebGoat must be up and reachable. `scripts/setup.sh` already starts port-forwarding
+automatically as its last step and holds it open, so after setup WebGoat is at
+`http://localhost:8080` with nothing extra to do. If you ever need to (re)start the
+tunnel on its own, run `./scripts/port-forward.sh` (it waits for readiness and
+auto-reconnects).
 
 Then, from this `demo/` folder:
 
@@ -54,9 +54,11 @@ The catalog lives in `exercises.mjs`, each route tagged `VULNERABLE`, `SAFE`, or
 `VULNERABLE` routes run genuinely unsafe code: SQL built by string concatenation and
 executed via `Statement`, XML parsed with external entities enabled, `readObject` on
 request bytes, `XStream.fromXML`, `MessageDigest` MD5, `URL.openStream` on a
-user-supplied URL. Contrast traces these from the dataflow alone, no payload needed.
-Covered classes: SQL injection (8 routes), XXE, insecure deserialization, vulnerable
-component (XStream), weak hashing, SSRF, stored XSS.
+user-supplied URL, and a user-controlled filename used to build a file path. Contrast
+traces these from the dataflow alone, no payload needed. Covered classes: SQL injection
+(including the `SqlOnlyInputValidation` "validated but still vulnerable" lessons), XXE,
+insecure deserialization, vulnerable component (XStream), weak hashing, SSRF, and path
+traversal.
 
 `SAFE` is the same kind of feature coded correctly -- a fully parameterized
 `PreparedStatement` (`/SqlInjectionMitigations/attack12a`). Exercising it produces no
@@ -64,10 +66,19 @@ finding. That's a true negative you can point to: Contrast looked at the paramet
 correctly stayed silent, so there's nothing to triage.
 
 `SIMULATED` are WebGoat teaching lessons that only run a regex or `String.contains()`
-check (`/SqlInjectionMitigations/attack10b`, `/SSRF/task1`, `/CrossSiteScripting/attack5a`).
-No vulnerable code runs, so Contrast reports nothing. A guess-based scanner that reads
-the HTTP response will flag these. That gap is the false-positive talking point: you
-don't triage noise Contrast never creates.
+check (`/SqlInjectionMitigations/attack10b`, `/SqlInjectionMitigations/attack10a`,
+`/SSRF/task1`). No vulnerable code runs, so Contrast reports nothing. A guess-based
+scanner that reads the HTTP response will flag these. That gap is the false-positive
+talking point: you don't triage noise Contrast never creates.
+
+A note on XSS: WebGoat's *lesson* XSS is **real** but rendered **client-side** (it's a
+single-page app, your input comes back as JSON and the browser injects it into the DOM),
+so those show up under Protect/ADR attacks rather than as Assess vulnerabilities — not a
+simulated lesson, not a scanner false positive. The one server-side exception is the
+**WebWolf mail viewer** (`GET /WebWolf/mail`), which renders the attacker-controlled email
+body into HTML server-side, so Contrast Assess *does* report it as stored XSS. So don't say
+"Assess reports no XSS in WebGoat" — it reports that one. See
+[`../docs/webgoat-vuln-classification.md`](../docs/webgoat-vuln-classification.md) (section A2).
 
 ## Why benign input is the headline
 
@@ -79,19 +90,20 @@ designed to make that visible: no exploit strings, real findings.
 
 ## Coverage
 
-Before this run, the Contrast route-coverage export showed 11 of 180 routes exercised.
-This catalog deliberately spans more routes and more vulnerability classes to raise
-that number and show breadth. To go further, add routes to `exercises.mjs`: open a lesson,
-use it once, and copy the request from your browser's Network tab or from Contrast's
-route-coverage view.
+`run-exercises.mjs` is a curated set focused on the headline vulnerability classes, not
+full route coverage. For breadth, `full-coverage-exercise.py` solves nearly every lesson
+and reaches about **180 of 183** routes, the remaining three are Spring interceptor hooks
+(`UserInterceptor` mapped to `/*`) with no URL to hit, so they stay uncovered by design.
+To extend the curated catalog, add routes to `exercises.mjs`: open a lesson, use it once,
+and copy the request from your browser's Network tab or Contrast's route-coverage view.
 
 ## Bonus: ADR / Protect attack run
 
 `run-adr-attacks.mjs` is the mirror image of the exercise run. Instead of benign input,
-it sends canonical **attack payloads** (SQLi, reflected XSS, path traversal, XXE) so
-Contrast **Protect** (RASP / ADR) detects them at runtime and they appear under the
-**Attacks** view. These are standard detection test vectors fired at your own WebGoat
-lab to validate Protect, not weaponized exploits.
+it sends canonical **attack payloads** (SQLi, XSS, path traversal, XXE, SSRF,
+deserialization, and more) so Contrast **Protect** (RASP / ADR) detects them at runtime
+and they appear under the **Attacks** view. These are standard detection test vectors
+fired at your own WebGoat lab to validate Protect, not weaponized exploits.
 
 ```bash
 node run-adr-attacks.mjs              # fire the attacks

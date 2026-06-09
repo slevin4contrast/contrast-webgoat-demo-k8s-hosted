@@ -12,6 +12,48 @@ That number only exists if you actually run that product against the same target
 this matters for the evaluation, we make a technique-based argument, not a measured claim
 about a named tool.
 
+## Why Contrast reports a finding, or stays silent (the mental model)
+
+This is the single idea to hold in your head on a call. Contrast Assess is a runtime
+agent. It reports a vulnerability when, and only when, it **observes untrusted data reach a
+real security sink during actual execution**, without being neutralized on the way. Untrusted
+data means a tracked source such as a request parameter, header, body, cookie, or uploaded
+filename. A real sink means a dangerous operation such as `Statement.executeQuery`,
+`ObjectInputStream.readObject`, `new URL(..).openStream`, a file path built from input, a weak
+`MessageDigest`, or a server-side HTML render. Every finding carries its own proof, the exact
+request, the line of code, and the source-to-sink dataflow, so you can open it and check it.
+
+That single rule explains every "yes" and every "no" in this demo. The silences are not gaps,
+they are the agent being correct.
+
+| Contrast does this | Because | WebGoat example |
+|---|---|---|
+| **Reports** a finding | tainted data was observed reaching a real sink during execution | the 21 confirmed true positives (SQLi, XXE, path traversal, deserialization, weak hash, server-side stored XSS) |
+| Stays silent, **code never ran** | the vulnerable line did not execute, so there was nothing to observe | `VulnerableComponents/attack1`: XStream 1.4.5 cannot initialize on JDK 23, the route 500s before `fromXML` completes. The vulnerable library still shows in Runtime SCA. |
+| Stays silent, **input never reached the sink** | a guard, required-parameter check, or validation rejected the request first | `SqlInjectionMitigations/servers` with no `column` param returns 400. `SSRF/task2` does not call `openStream` unless the URL exactly matches `http://ifconfig.pro`. |
+| Stays silent, **data was neutralized** | the input was parameterized or encoded before the sink, a true negative | `attack12a` uses a `PreparedStatement`. `attack6b` compares with `.equals` over a constant query. |
+| Stays silent, **no server-side sink** | the vulnerability executes in the browser, there is nothing server-side to trace | the SPA lesson XSS, returned as JSON and rendered client-side. Protect still flags the inbound payload as an attack. |
+| Stays silent, **not a dataflow class** | the bug is authorization, session, or logic, not source-to-sink | IDOR, access-control, CSRF, JWT forgery. A tool that called these "injection" would be the one producing false positives. |
+| Stays silent, **lesson is simulated** | the endpoint only runs a regex, `contains`, `equals`, or quiz check, no vulnerable code | `attack10a/10b`, `SSRF/task1`, the `LogSpoofing` lesson. |
+
+A real finding can also be **absent from a particular export for operational reasons, not
+detection reasons**. Treat these as "drive it again," not "Contrast missed it":
+
+- **Coverage.** The route was loaded but not exercised with input that reaches the sink. The
+  `servers` case above is exactly this, and the fix was to send the `column` parameter.
+- **Attribution.** The finding exists but the route-coverage export does not attach it to that
+  route, or it lives in a separate context. The WebWolf mail stored XSS is real and in the
+  vulnerabilities export, yet it does not appear against a WebGoat route in route coverage.
+  Check the vulnerabilities list, not just route coverage.
+- **Environment.** An outbound sink cannot complete because the pod has no network egress. The
+  SSRF route is the candidate, give the pod egress or point the URL at an in-cluster address.
+
+And the Protect (ADR) side is the mirror image. Protect inspects **inbound requests** at runtime
+and flags or blocks attack payloads (SQLi strings, `<script>`, `../`, XXE doctypes) whether or
+not the underlying code is vulnerable. So Protect can light up on a route where Assess is
+correctly silent, the SPA XSS is the clearest case. In monitor mode the request completes and
+the attack is logged, in block mode Contrast returns 403/406.
+
 ## 1. Vetting that Contrast's findings are true positives
 
 Contrast Assess reports a vulnerability only when it observes untrusted data reach a
@@ -30,29 +72,46 @@ WebGoat v2025.3 source. These are unambiguous true positives.
 | `POST /SqlInjection/assignment5b` | SQL Injection | `userid` concatenated (only `login_count` is bound) |
 | `POST /SqlInjectionAdvanced/attack6a` | SQL Injection | last name concatenated into the query |
 | `GET /SqlInjectionMitigations/servers` | SQL Injection | sort column concatenated into `ORDER BY` |
+| `POST /SqlOnlyInputValidation/attack` | SQL Injection | input filtered (spaces rejected) then concatenated into `executeQuery` via `injectableQuery` — validation is not a fix |
+| `POST /SqlOnlyInputValidationOnKeywords/attack` | SQL Injection | input filtered (FROM/SELECT stripped) then the same concatenated `executeQuery` |
 | `POST /xxe/simple`, `/xxe/blind` | XXE | XML body parsed with external entities enabled |
 | `POST /InsecureDeserialization/task` | Untrusted deserialization | `ObjectInputStream.readObject()` on request bytes |
 | `POST /VulnerableComponents/attack1` | Vulnerable component | `XStream.fromXML(input)` |
 | `GET /crypto/hashing/md5` | Weak cryptography | `MessageDigest.getInstance("MD5")` |
 | `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
+| `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input`, `/zip-slip` | Path traversal | user filename / archive entry builds the file path |
+| `POST /PathTraversal/profile-upload-fix` | Path traversal | the "fix" is a single-pass `replace("../","")`, defeated by `....//` |
+| `GET /WebWolf/mail` | Stored XSS (server-side) | WebWolf renders the attacker-controlled email body into HTML server-side |
 
-This table is a representative subset of the headline cases. For the complete v2025.3
+The two `SqlOnlyInputValidation*` rows are the sharpest example in the set: the lesson validates
+the input, yet the underlying query is still concatenated, so the vulnerability is real and
+Contrast traces straight through the filter to the sink. A tool that reasoned "input is
+validated, therefore safe" would miss it.
+
+This table is a representative subset of the headline cases. The export also includes lower-
+severity real findings (log injection, weak random, hardcoded password, mass assignment, weak
+crypto, and header/cookie hygiene) — see the classification doc. None are false positives. For the complete v2025.3
 lesson-by-lesson inventory (every real, simulated, and logic-only lesson), see
 [`webgoat-vuln-classification.md`](webgoat-vuln-classification.md).
 
-Two we deliberately do not overclaim:
+Two we describe carefully so we neither over- nor under-claim:
 
-- **XSS** (reflected `CrossSiteScripting/attack5a`, stored `CrossSiteScriptingStored/stored-xss`,
-  DOM `phone-home-xss`) is **real** but rendered client-side. WebGoat is a single-page app:
-  your input comes back in a JSON response and the browser injects it into the DOM, so the
-  payload executes in the browser, not via a server-rendered HTML sink. Server-side Assess
-  therefore generally does not report it (Protect/ADR does detect the inbound payload as an
-  attack). Do not present WebGoat XSS as a scanner false positive, a browser-based scanner
-  would correctly flag it. See [`webgoat-vuln-classification.md`](webgoat-vuln-classification.md) (section A2).
-- **A systemic low-severity finding** may appear across many routes (in a sample export,
-  a single "Note" finding showed up on most routes including the login and lesson-menu
-  pages). That is a configuration-level finding, not a per-route result, and not a false
-  positive. Identify what it is before describing it.
+- **XSS has two cases, and Assess reports one of them.** The WebGoat *lesson* XSS (reflected
+  `CrossSiteScripting/attack5a`, stored `CrossSiteScriptingStored/stored-xss`, DOM
+  `phone-home-xss`) is **real** but rendered **client-side**: WebGoat is a single-page app, your
+  input comes back as JSON and the browser injects it into the DOM, so there's no server-rendered
+  HTML sink and server-side Assess generally stays quiet (Protect/ADR still detects the inbound
+  payload as an attack). But the **WebWolf mail viewer** stored XSS (`GET /WebWolf/mail`) renders
+  the attacker-controlled email body into HTML **server-side**, so Assess *does* report it (it's
+  in the export as a High). So the correct line is "Assess is quiet on the SPA lesson XSS, and
+  reports the server-side WebWolf mail XSS" — never "Assess reports no XSS in WebGoat." And don't
+  present the SPA lesson XSS as a scanner false positive, a browser-based scanner would correctly
+  flag it. See [`webgoat-vuln-classification.md`](webgoat-vuln-classification.md) (section A2).
+- **Several systemic low-severity findings** appear across many routes (in the export, header and
+  cookie-hygiene findings such as CSP, HSTS, X-Content-Type-Options, anti-clickjacking, and the
+  `secure` cookie flag show up app-wide, including on the login and lesson-menu pages). These are
+  configuration-level findings, not per-route results, and not false positives. Identify what each
+  one is before describing it.
 
 ### Prove it from your own data
 
