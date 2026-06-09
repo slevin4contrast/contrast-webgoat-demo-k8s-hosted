@@ -13,3 +13,6 @@ __pycache__/
 # OS / editor cruft
 .DS_Store
 *.swp
+
+# Local agent / editor settings
+.claude/
