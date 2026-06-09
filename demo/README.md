@@ -166,14 +166,19 @@ rules (NoSQL, LDAP, GraphQL, and so on) have no matching code in WebGoat at all.
 
 ## CSRF
 
-Both scripts now end with a dedicated CSRF trigger. WebGoat disables Spring CSRF app-wide, so a
-state-changing POST with no token is unprotected. The Contrast Assess team confirmed the CSRF rule
-fires on the real state change (`register.mvc`, a DB write), not on the simulated `/csrf/*`
-lessons. The trigger sends a fresh, form-encoded registration POST with an external `Origin` and
-`Referer` and no `X-Requested-With` header (the most CSRF-shaped request possible). After a run,
-look for a Cross-Site Request Forgery finding on `/register.mvc`. If it does not appear on your
-instance while it does on another, compare the agent version and applied Assess policy, that
-difference is environmental, not a script gap.
+CSRF is an **app-level** finding. WebGoat disables Spring CSRF app-wide, so any state-changing
+POST with no token is unprotected, and Contrast reports it once, pinned to a representative
+unprotected POST (we have seen `/SqlInjection/attack2` and, on another instance, `register.mvc`).
+The trigger condition is a state-changing POST sent **without** the `X-Requested-With` header,
+because Contrast treats XHR requests as CSRF-protected.
+
+What this means for the two scripts: `run-exercises.mjs` uses a plain Playwright context with no
+XHR header, so all of its POSTs already qualify and CSRF fires from a normal run. The
+full-coverage solver sends its POSTs through an XHR session, which suppresses CSRF, so it includes
+a bare no-XHR `csrf_trigger()` (a fresh registration POST with an external `Origin`/`Referer`) so
+the solver surfaces CSRF too. After a run, look for a Cross-Site Request Forgery finding (it may
+attach to any unprotected POST, not a fixed route). It correctly does not appear on the simulated
+`/csrf/*` lessons.
 
 ## Notes
 

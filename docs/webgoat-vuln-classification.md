@@ -186,7 +186,7 @@ C1. Contrast has a dedicated rule for these (it can report them, separate from d
 
 | Lesson area | Routes | Matching Contrast rule |
 |---|---|---|
-| CSRF | `POST /register.mvc` (the real target), not `/csrf/*` | **Cross-Site Request Forgery** (High). WebGoat disables Spring CSRF app-wide (`.csrf().disable()`), so a genuine state-changing request with no token is unprotected. The Contrast Assess team confirmed the rule fires on `register.mvc`, because registration is a real DB write, and correctly does not fire on the `/csrf/*` lessons, which are simulated (Referer plus hardcoded-token checks, not a real protected operation). The trigger is a bare form-style POST without the `X-Requested-With` header. |
+| CSRF | app-level (pins to a representative unprotected POST, e.g. `/SqlInjection/attack2` on our instance, `register.mvc` on a peer), not `/csrf/*` | **Cross-Site Request Forgery** (High). WebGoat disables Spring CSRF app-wide (`.csrf().disable()`), so any state-changing POST with no token is unprotected. Fires when the POST is sent **without** the `X-Requested-With` header (XHR requests are treated as protected). Correctly does not fire on the `/csrf/*` lessons, which are simulated. |
 | Spoof cookie / session cookies | `/SpoofCookie/*` | cookie rules: **Application Disables 'secure' Flag on Cookies**, **Session Cookie Has No 'HttpOnly' Flag** (the `secure`-flag one did fire in our export) |
 | Hijack session | `/HijackSession/login` | session rules: **Session Rewriting**, **Overly Long Session Timeout** (the predictable-id weakness itself is logic, see C2) |
 | Insecure login | `/InsecureLogin/*` | **Insecure Authentication Protocol**, **Insecure SSL Socket Creation** (transport-level) |
@@ -260,15 +260,17 @@ Scripting** (Medium), which is exactly the distinction in section A2.
 
 ## CSRF — resolved, and Hardcoded Cryptographic Key — open
 
-**Cross-Site Request Forgery (High) — resolved.** The Contrast Assess team confirmed the rule
-fires on `register.mvc`, because registration is a real, unprotected, state-changing DB write
-(WebGoat disables Spring CSRF app-wide). It correctly does not fire on the `/csrf/*` lessons,
-which are simulated (Referer and hardcoded-token checks, not a real protected operation). The
-trigger is a bare form-style POST to `register.mvc` without the `X-Requested-With` header. Our
-solver's main registration is already a bare POST, so a fresh run should surface it. If it does
-not appear on our instance, compare the agent version and applied policy with the peer instance
-where it fired, rather than changing the exercise. Earlier hypotheses about a disabled
-`CsrfFilter` blocking the rule were wrong, the rule keys on the real state-changing request.
+**Cross-Site Request Forgery (High) — resolved and now firing in our export.** This is an
+**app-level** finding: WebGoat disables Spring CSRF app-wide, so any state-changing POST that
+lacks anti-CSRF protection is unprotected. Contrast reports it once and pins it to a representative
+unprotected POST, `register.mvc` on a peer instance, `/SqlInjection/attack2` on ours. It is not
+route-specific. The trigger is a state-changing POST sent **without the `X-Requested-With`
+header** (Contrast treats XHR requests as CSRF-protected, since that header cannot be set
+cross-origin). `run-exercises.mjs` uses a plain Playwright context with no XHR header, so all its
+POSTs qualify and CSRF fires from a normal run. The full-coverage solver sends its POSTs through an
+XHR session, which suppresses CSRF, so a bare no-XHR `csrf_trigger()` was added to it. It correctly
+does not fire on the `/csrf/*` lessons, which are simulated. Earlier hypotheses about a disabled
+`CsrfFilter` blocking the rule were wrong.
 
 **Hardcoded Cryptographic Key (Medium) — open.** `JWTSecretKeyEndpoint` holds a hardcoded
 `SECRETS` array used as the HS256 signing key, and the script calls `/JWT/secret/gettoken`, so
