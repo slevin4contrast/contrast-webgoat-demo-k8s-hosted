@@ -20,9 +20,12 @@ Each row was checked against the WebGoat v2025.3 source. Three buckets:
 - **B. Simulated lessons** — the endpoint only runs a regex / `String.contains` /
   `.equals` / quiz comparison. No vulnerable code executes. A guess-based scanner can
   flag these (false positives); Contrast does not.
-- **C. Real flaws, but not an injection/dataflow class** — genuine vulnerabilities
-  (authorization, CSRF, logic), but not something an IAST dataflow engine reports. A
-  scanner that labels these as "injection" would itself be producing false positives.
+- **C. Real flaws that are not injection/dataflow vulns** — genuine vulnerabilities that are
+  authorization, session, or logic issues. Important: Contrast is not only a dataflow engine, it
+  also has dedicated control/configuration rules, so it *does* report some of these (for example
+  Cross-Site Request Forgery, cookie-flag and session rules). What no automated tool reliably
+  finds is the pure business-logic and authorization class (IDOR, function-level access control,
+  auth-bypass logic, JWT forgery). See bucket C for which is which.
 
 Caveats: behavior can shift with WebGoat version and JDK, and Contrast rule behavior can
 change. Confirm against your live instance and current Contrast docs before using
@@ -78,6 +81,12 @@ request + dataflow proof in Contrast, which is itself ground truth.
 
 These are real findings the agent raises beyond the injection/dataflow headline. They are not
 false positives, but they are lower severity and partly app-wide. Confirm each in the UI.
+
+The header and cookie-hygiene findings are a direct, verifiable consequence of WebGoat's config:
+`WebSecurityConfig` calls `.headers(headers -> headers.disable())`, which turns off Spring's
+security headers, so the responses genuinely lack CSP, HSTS, X-Content-Type-Options, and the
+rest. Contrast reports exactly what is missing. This is a good thing to show, the finding maps to
+a real line of configuration.
 
 | Class | Where it showed (2026-06-09 export) | Note |
 |---|---|---|
@@ -162,24 +171,33 @@ infers from the response can flag them.
 | Quizzes: `cia/quiz`, `SqlInjectionAdvanced/quiz`, `CrossSiteScripting/quiz`, `JWT/quiz`, `HttpBasics/attack2` | multiple-choice answer comparison |
 | `HttpBasics/attack1`, `ChromeDevTools/*`, `HttpProxies/*`, `SecurePasswords/assignment`, `lesson-template/*`, `BypassRestrictions/*`, `ClientSideFiltering/*`, `HtmlTampering/task` | teaching/echo/validation checks |
 
-## C. Real flaws, but not an injection/dataflow class
+## C. Real flaws that are not injection/dataflow vulns
 
-Genuine vulnerabilities WebGoat teaches, but they are authorization, session, or logic
-issues, not data flowing into an injection/crypto sink. An IAST dataflow engine does not
-generate findings for these, and a tool that reported them as "SQL injection" or "XSS"
-would be producing false positives.
+These WebGoat lessons are authorization, session, or logic issues, not data flowing into an
+injection or crypto sink, so they would not show up as a dataflow finding (SQLi, XXE, and so on).
+But that does **not** mean Contrast ignores them. Contrast also ships control and configuration
+rules, so some of these *do* have a matching Contrast rule. The table splits them.
 
-| Lesson area | Routes | Why not an Assess dataflow finding |
+C1. Contrast has a dedicated rule for these (it can report them, separate from dataflow):
+
+| Lesson area | Routes | Matching Contrast rule |
+|---|---|---|
+| CSRF | `/csrf/*` | **Cross-Site Request Forgery** (High). WebGoat is a valid target: its `WebSecurityConfig` calls `.csrf(csrf -> csrf.disable())`, so Spring CSRF protection is off app-wide and every state-changing POST is unprotected. The coverage script already sends cross-site, no-token POSTs to these routes, yet the rule produced no finding in our export. That is a policy or instrumentation matter, not a coverage gap (see the policy-check note below). |
+| Spoof cookie / session cookies | `/SpoofCookie/*` | cookie rules: **Application Disables 'secure' Flag on Cookies**, **Session Cookie Has No 'HttpOnly' Flag** (the `secure`-flag one did fire in our export) |
+| Hijack session | `/HijackSession/login` | session rules: **Session Rewriting**, **Overly Long Session Timeout** (the predictable-id weakness itself is logic, see C2) |
+| Insecure login | `/InsecureLogin/*` | **Insecure Authentication Protocol**, **Insecure SSL Socket Creation** (transport-level) |
+
+C2. Genuinely out of scope for automated detection (business logic / authorization, no tool
+reliably finds these without understanding intent):
+
+| Lesson area | Routes | Why it needs human review |
 |---|---|---|
 | IDOR | `/IDOR/*` | missing object-level authorization (logic) |
 | Missing function-level access control | `/access-control/*` | authorization logic |
 | Auth bypass | `/auth-bypass/verify-account` | flawed verification logic |
-| CSRF | `/csrf/*` | missing anti-CSRF control (request-level) |
-| Spoof cookie | `/SpoofCookie/*` | weak cookie scheme (logic/crypto-misuse) |
-| Hijack session | `/HijackSession/login` | predictable session id |
-| Insecure login | `/InsecureLogin/*` | credentials over the wire (transport) |
-| Password reset | `/PasswordReset/*` | reset-flow logic (some paths send mail via a URL fetch) |
-| JWT | `/JWT/*` | token forgery / alg confusion (crypto-misuse). Edge cases: the `kid` lesson does a SQL lookup with the `kid` value and the `jku` lesson fetches a URL, so those two could surface SQLi/SSRF-style findings, verify on the instance |
+| Hijack session (predictability) | `/HijackSession/login` | judging that a session id is *predictable* is analysis, not a sink |
+| Password reset | `/PasswordReset/*` | reset-flow logic (though related findings did fire here: hardcoded password, weak random, mass assignment) |
+| JWT | `/JWT/*` | token forgery / alg confusion (crypto-misuse logic). Edge cases: the `kid` lesson does a SQL lookup with the `kid` value and the `jku` lesson fetches a URL, so those two could surface SQLi/SSRF-style findings, verify on the instance |
 
 ## Contrast Assess rule coverage in this deploy
 
@@ -214,14 +232,38 @@ The 20 rule types observed in this deploy (exact Contrast rule names and severit
 | Note | Response With Insecurely Configured Content-Security-Policy Header |
 | Note | Response With Insecurely Configured Strict-Transport-Security Header |
 
-Rules WebGoat *does* have a lesson for but that do not surface here, each for a reason already
-covered above, are **Cross-Site Scripting** (Medium, the reflected SPA lesson renders
-client-side, so Assess is quiet and Protect catches it), **Server-Side Request Forgery**
-(Medium, the egress / attribution case on `SSRF/task2`), and **Cross-Site Request Forgery**
-(High, this deploy disables CSRF protection and the lesson is logic-level, so it is not a
-dataflow finding). Note that Contrast splits XSS into two rules, **Stored Cross-Site Scripting**
-(High, which fired on the server-side WebWolf mail render) and **Cross-Site Scripting** (Medium,
-the client-side reflected case), which is exactly the distinction in section A2.
+Rules WebGoat *does* have a lesson for but that did not surface in our export, each for a
+different reason:
+
+- **Cross-Site Scripting** (Medium) — the reflected SPA lesson renders client-side, so Assess
+  is quiet and Protect catches the inbound payload. (Distinct from **Stored Cross-Site
+  Scripting** (High), which *did* fire on the server-side WebWolf mail render, see section A2.)
+- **Server-Side Request Forgery** (Medium) — the egress / attribution case on `SSRF/task2`.
+- **Cross-Site Request Forgery** (High) — Contrast has a CSRF rule and WebGoat is a valid target
+  (`WebSecurityConfig` does `.csrf().disable()`, so protection is off app-wide). The coverage
+  script already drives the `/csrf/*` routes with cross-site, no-token POSTs, so this is not a
+  coverage gap. It still produced no finding, which points at the policy or the rule's
+  instrumentation model (see the next section).
+
+Contrast splits XSS into two rules, **Stored Cross-Site Scripting** (High) and **Cross-Site
+Scripting** (Medium), which is exactly the distinction in section A2.
+
+## Rules that need a policy or product check (not a coverage problem)
+
+Two rules have a valid WebGoat target that the coverage script already exercises, yet they did
+not produce a finding. The lever for these is the Contrast Assess policy or a rule-applicability
+question for the product team, not the exercise script. We confirmed the routes execute, so do
+not try to "fix" these by changing the solver.
+
+| Rule | Valid target in WebGoat (confirmed in source) | Why it likely did not fire | What to do |
+|---|---|---|---|
+| Cross-Site Request Forgery (High) | `WebSecurityConfig` disables Spring CSRF app-wide; the `/csrf/*` POSTs are unprotected and the script hits them cross-site without a token | With Spring CSRF disabled there is no `CsrfFilter` in the chain for the rule to evaluate, and many WebGoat endpoints are JSON/XHR which a CSRF rule may treat as non-relevant | In the UI, Policy management, confirm the Cross-Site Request Forgery rule is enabled in the Assess policy applied to this app. If enabled and still silent, raise the disabled-filter case with the Contrast product team. |
+| Hardcoded Cryptographic Key (Medium) | `JWTSecretKeyEndpoint` holds a hardcoded `SECRETS` array used as the HS256 signing key, and the script calls `/JWT/secret/gettoken`, so the signing code runs | The key is a plain `String` handed to jjwt's `signWith`, not a `javax.crypto.spec.SecretKeySpec` or `KeyGenerator`, so it may not match the rule's sink pattern | Confirm the rule is enabled in the policy. If enabled, this is a rule-pattern question for the product team, the hardcoded **password** rule did fire, so hardcoded-secret detection is working in general. |
+
+The takeaway for the eval: the coverage script is not the bottleneck for these. The vulnerable
+code is present and exercised. Whether the rule fires depends on the applied Assess policy and
+how the rule models that specific framework usage. Verify the policy before the live session so
+you can speak to it accurately.
 
 ## How to use this
 
