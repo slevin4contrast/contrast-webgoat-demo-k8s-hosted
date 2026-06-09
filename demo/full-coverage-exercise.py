@@ -1098,6 +1098,96 @@ def solve_webwolf_introduction():
     check("WebWolf/mail", {"uniqueCode": unique_code})
 
 
+def read_back_pass():
+    """Second-order / stored vulnerabilities only fire when stored data is READ BACK.
+
+    The first request *stores* the payload; the dangerous sink (server-side render, re-query,
+    or log write) runs on a later *read*. That is why finding counts climb on a second run.
+    By the time we reach this pass every store has already happened, so we re-visit the read
+    endpoints once more so those sinks execute within a single run. See
+    docs/false-positives-vs-real-vulns.md ("the mental model") and the read-back note in
+    demo/README.md. This does not change what Contrast can find, it just makes one run enough.
+    """
+    print("\n=== Read-back pass (trigger stored / second-order sinks) ===")
+
+    # Stored XSS: a comment was posted in solve_stored_xss(); re-read the comment list so the
+    # render path runs again with the stored payload present.
+    try:
+        session.get(url("CrossSiteScriptingStored/stored-xss"))
+        print("  ~ re-read CrossSiteScriptingStored/stored-xss (stored comment render)")
+    except Exception as e:
+        print(f"  ? stored-xss read-back: {e}")
+
+    # WebWolf mailbox: emails were sent during password reset, challenge 7, and the WebWolf
+    # intro. Rendering the mailbox server-side is where the WebWolf stored-XSS and log-injection
+    # sinks actually fire, so read it back on the WebWolf session (port 9090).
+    try:
+        login_webwolf()
+        webwolf_session.get(webwolf_url("mail"))
+        webwolf_session.get(webwolf_url("landing/password-reset"))
+        print("  ~ re-read WebWolf mailbox + landing (server-side render of stored email)")
+    except Exception as e:
+        print(f"  ? webwolf read-back: {e}")
+
+    # ORDER BY sink: re-hit with the required param so the concatenated query runs again.
+    try:
+        session.get(url("SqlInjectionMitigations/servers"), params={"column": "hostname"})
+        print("  ~ re-read SqlInjectionMitigations/servers?column=hostname (ORDER BY concat)")
+    except Exception as e:
+        print(f"  ? servers read-back: {e}")
+
+
+def sink_health_check():
+    """Sink-exercised guard. "Route covered" is not "sink ran" -- the servers 400 proved that.
+
+    Re-hit the headline real-sink routes with valid input and assert the handler actually
+    executed (HTTP status < 400). A WARN here means the sink almost certainly did not run, so
+    expect no finding for that route, investigate before assuming Contrast missed it. This is a
+    guard against silent coverage gaps, it does not try to solve the lessons. See
+    docs/findings-verification-ledger.md ("route-covered is not sink-exercised").
+    """
+    print("\n=== Sink health check (did the real sinks actually run?) ===")
+    probes = [
+        ("POST", "SqlInjection/attack2", {"query": "SELECT * FROM employees"}),
+        ("POST", "SqlInjection/assignment5b", {"login_count": "1", "userid": "1"}),
+        ("POST", "SqlInjectionAdvanced/attack6a", {"userid_6a": "Smith"}),
+        ("POST", "SqlOnlyInputValidation/attack",
+                 {"userid_sql_only_input_validation": "1"}),
+        ("GET",  "SqlInjectionMitigations/servers", {"column": "hostname"}),
+        ("POST", "InsecureDeserialization/task", {"token": "rO0ABXQABHRlc3Q="}),
+        ("XML",  "xxe/simple", '<?xml version="1.0"?><comment><text>x</text></comment>'),
+        ("POST", "PathTraversal/profile-upload-fix", None),  # multipart, see below
+    ]
+    ok = warn = 0
+    for method, path, payload in probes:
+        try:
+            if method == "GET":
+                r = session.get(url(path), params=payload)
+            elif method == "XML":
+                r = session.post(url(path), data=payload.encode(),
+                                 headers={"Content-Type": "application/xml"})
+            elif path.startswith("PathTraversal/profile-upload"):
+                r = session.post(url(path),
+                                 files={"uploadedFileFix": ("x.png", b"x", "image/png")},
+                                 data={"fullNameFix": "....//x"})
+            else:
+                r = session.post(url(path), data=payload)
+            status = r.status_code
+            if status < 400:
+                print(f"  PASS {method:4} /{path} -> {status}")
+                ok += 1
+            else:
+                print(f"  WARN {method:4} /{path} -> {status}  (sink likely NOT executed; expect no finding)")
+                warn += 1
+        except Exception as e:
+            print(f"  WARN {method:4} /{path} -> error {e}")
+            warn += 1
+    print(f"  sink health: {ok} ran cleanly, {warn} warning(s)")
+    if warn:
+        print("  [!] a WARN means route-covered but sink-not-run; fix the request before "
+              "concluding Contrast missed it.")
+
+
 def main():
     login()
     login_webwolf()
@@ -1199,7 +1289,15 @@ def main():
     except Exception as e:
         print(f"  ? scoreboard-data: {e}")
 
+    # Final pass: re-read the stored-data endpoints so second-order sinks fire in one run.
+    read_back_pass()
+
+    # Guard: confirm the headline real sinks actually executed (route-covered != sink-ran).
+    sink_health_check()
+
     print("\n[+] All lessons exercised.")
+    print("[i] Stored/second-order findings (stored XSS, WebWolf mail) fire on read-back and")
+    print("    report asynchronously, so give the agent ~30-60s to flush before exporting.")
 
 
 if __name__ == "__main__":

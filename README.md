@@ -180,6 +180,24 @@ The one unavoidably cluster-wide piece is the operator's CRDs and mutating webho
 selects. For zero cluster-scoped footprint, use `kind`. Set `KUBE_CONTEXT` in `.env` as
 a guard against deploying into the wrong cluster.
 
+## Documentation map (and how it maps to the evaluation)
+
+Read these in this order. Each has one job, so they do not repeat each other.
+
+| When you want to... | Read | Eval pillar it supports |
+|---|---|---|
+| Stand the environment up and drive the app | this README, then [`demo/README.md`](demo/README.md) | Setup and pre-work scans |
+| Run the live session | [`docs/demo-runbook.md`](docs/demo-runbook.md) | Interface usability, and the whole walkthrough |
+| Explain why Contrast reports a finding or stays silent, and how it filters false positives | [`docs/false-positives-vs-real-vulns.md`](docs/false-positives-vs-real-vulns.md) | False-positive identification |
+| Look up whether a specific WebGoat lesson is real, simulated, or logic-only, and which Contrast rules this deploy exercises | [`docs/webgoat-vuln-classification.md`](docs/webgoat-vuln-classification.md) | False-positive identification, reporting |
+| Prove, per finding, how we know it is a true positive | [`docs/findings-verification-ledger.md`](docs/findings-verification-ledger.md) | False-positive identification, reporting |
+| Set up automated remediation | [`smartfix/README.md`](smartfix/README.md) | Reporting and remediation |
+
+Division of labor among the three analysis docs: the classification doc is the inventory (what
+each lesson is), the false-positives doc is the argument (why Contrast reports or not), and the
+ledger is the evidence (the exact sink behind each finding). The runbook ties them to the live
+session.
+
 ## Repository layout
 
 ```
@@ -194,8 +212,10 @@ scripts/status.sh                          health check (operator, pod, injectio
 scripts/teardown.sh                        remove everything + clear the Contrast UI
 scripts/clear-contrast-ui.mjs              clear findings / attacks / routes / Behavior via the Contrast API
 scripts/verify-findings.mjs                vet TPs vs FPs: cross-reference a route-coverage CSV against a source-grounded sink map
-docs/false-positives-vs-real-vulns.md      TP/FP analysis and the technique-based comparison
-docs/webgoat-vuln-classification.md        full v2025.3 lesson inventory: real vs simulated vs logic-only
+docs/demo-runbook.md                       live session script: interface walkthrough, FP demo, reporting (maps to the eval)
+docs/false-positives-vs-real-vulns.md      TP/FP analysis, the decision logic, and the technique-based comparison
+docs/webgoat-vuln-classification.md        full v2025.3 lesson inventory: real vs simulated vs logic-only, plus Contrast rule coverage
+docs/findings-verification-ledger.md       per-finding evidence basis (source-confirmed / config-by-response / confirm-in-UI) and known limitations
 smartfix/smartfix.yml                      Contrast AI SmartFix GitHub Actions workflow (copy into a WebGoat source fork)
 smartfix/README.md                         SmartFix setup: API-only user, credentials, where it runs
 scripts/smartfix-preflight.mjs             validate Contrast creds + app id locally before the GitHub run (no secrets printed)

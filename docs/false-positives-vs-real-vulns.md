@@ -62,37 +62,34 @@ the exact HTTP request, the line of code, and the data flow from source to sink.
 one is independently checkable.
 
 For this demo we mapped every reported route to the actual vulnerable sink in the OWASP
-WebGoat v2025.3 source. These are unambiguous true positives.
+WebGoat v2025.3 source. These are unambiguous true positives. The per-finding evidence basis
+(which sinks we read in source, which are verified by the HTTP response, and which still need a
+quick UI confirmation) is recorded in
+[`findings-verification-ledger.md`](findings-verification-ledger.md).
+
+A few representative cases (the complete list lives elsewhere, see below):
 
 | Route | Vulnerability | The sink that executes (WebGoat source) |
 |---|---|---|
 | `POST /SqlInjection/attack2` | SQL Injection | user-supplied string passed to `Statement.executeQuery` |
-| `POST /SqlInjection/attack8` | SQL Injection | `name` + `auth_tan` concatenated into the query |
-| `POST /SqlInjection/assignment5a` | SQL Injection | input concatenated into `... last_name = '<input>'` |
-| `POST /SqlInjection/assignment5b` | SQL Injection | `userid` concatenated (only `login_count` is bound) |
-| `POST /SqlInjectionAdvanced/attack6a` | SQL Injection | last name concatenated into the query |
-| `GET /SqlInjectionMitigations/servers` | SQL Injection | sort column concatenated into `ORDER BY` |
-| `POST /SqlOnlyInputValidation/attack` | SQL Injection | input filtered (spaces rejected) then concatenated into `executeQuery` via `injectableQuery` — validation is not a fix |
-| `POST /SqlOnlyInputValidationOnKeywords/attack` | SQL Injection | input filtered (FROM/SELECT stripped) then the same concatenated `executeQuery` |
-| `POST /xxe/simple`, `/xxe/blind` | XXE | XML body parsed with external entities enabled |
+| `POST /SqlOnlyInputValidation/attack` | SQL Injection | input validated (spaces rejected), then concatenated into `executeQuery`, validation is not a fix |
+| `POST /xxe/simple` | XXE | XML body parsed with external entities enabled |
 | `POST /InsecureDeserialization/task` | Untrusted deserialization | `ObjectInputStream.readObject()` on request bytes |
-| `POST /VulnerableComponents/attack1` | Vulnerable component | `XStream.fromXML(input)` |
-| `GET /crypto/hashing/md5` | Weak cryptography | `MessageDigest.getInstance("MD5")` |
-| `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
-| `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input`, `/zip-slip` | Path traversal | user filename / archive entry builds the file path |
 | `POST /PathTraversal/profile-upload-fix` | Path traversal | the "fix" is a single-pass `replace("../","")`, defeated by `....//` |
 | `GET /WebWolf/mail` | Stored XSS (server-side) | WebWolf renders the attacker-controlled email body into HTML server-side |
 
-The two `SqlOnlyInputValidation*` rows are the sharpest example in the set: the lesson validates
-the input, yet the underlying query is still concatenated, so the vulnerability is real and
-Contrast traces straight through the filter to the sink. A tool that reasoned "input is
-validated, therefore safe" would miss it.
+The `SqlOnlyInputValidation` row is the sharpest example: the lesson validates the input, yet the
+underlying query is still concatenated, so the vulnerability is real and Contrast traces straight
+through the filter to the sink. A tool that reasoned "input is validated, therefore safe" would
+miss it. The `profile-upload-fix` row makes the same point for a bypassable sanitizer.
 
-This table is a representative subset of the headline cases. The export also includes lower-
-severity real findings (log injection, weak random, hardcoded password, mass assignment, weak
-crypto, and header/cookie hygiene) — see the classification doc. None are false positives. For the complete v2025.3
-lesson-by-lesson inventory (every real, simulated, and logic-only lesson), see
-[`webgoat-vuln-classification.md`](webgoat-vuln-classification.md).
+To avoid repeating the same lists in three places, this doc stays focused on the argument. The
+two complete references are: the full route-by-route inventory in
+[`webgoat-vuln-classification.md`](webgoat-vuln-classification.md), and the per-finding evidence
+(which sink we read in source, with file and line) in
+[`findings-verification-ledger.md`](findings-verification-ledger.md). All 22 confirmed true
+positives and the lower-severity real findings (log injection, weak random, hardcoded password,
+mass assignment, weak crypto, header/cookie hygiene) are itemized there. None are false positives.
 
 Two we describe carefully so we neither over- nor under-claim:
 

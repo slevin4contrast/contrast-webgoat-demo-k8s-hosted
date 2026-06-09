@@ -130,6 +130,13 @@ python3 full-coverage-exercise.py
 
 Config via env: `WEBGOAT_BASE`, `WEBWOLF_BASE`, `WEBGOAT_USER`, `WEBGOAT_PASS`.
 
+Read-back pass: stored and second-order vulnerabilities (stored XSS, the WebWolf mail viewer)
+only fire when the stored data is read back, not when it's first stored, which is why finding
+counts climb on a second run. The solver ends with a `read_back_pass()` that re-visits those
+read endpoints (the stored-XSS comment list, the WebWolf mailbox and landing, the `servers`
+ORDER BY route) so those sinks fire within a single run. These findings still report
+asynchronously, so give the agent roughly 30 to 60 seconds to flush before you export.
+
 Pick the right tool for the moment:
 
 - `run-exercises.mjs` -- benign input, curated routes. The headline IAST story ("no

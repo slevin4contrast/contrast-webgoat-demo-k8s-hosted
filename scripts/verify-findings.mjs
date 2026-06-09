@@ -56,7 +56,7 @@ const ROUTES = {
   "/xxe/content-type":                ["real", "XML External Entity"],
   "/InsecureDeserialization/task":    ["real", "Untrusted Deserialization (readObject)"],
   "/VulnerableComponents/attack1":    ["real", "Vulnerable component (XStream.fromXML)"],
-  "/crypto/hashing/md5":              ["real", "Weak cryptography (MD5)"],
+  "/crypto/hashing/md5":              ["real", "Insecure Hash Algorithms (MD5)"],
   "/SSRF/task2":                      ["real", "SSRF (URL.openStream on user input)"],
   // Path traversal: user-controlled filename / fullName / archive-entry builds the path.
   // profile-upload-fix is included on purpose: its "fix" is a single-pass

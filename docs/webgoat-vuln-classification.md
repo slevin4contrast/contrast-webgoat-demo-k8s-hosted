@@ -61,7 +61,7 @@ safe" would miss it. (Verified in v2025.3 source: both delegate to `injectableQu
 | `POST /xxe/simple`, `/xxe/content-type`, `/xxe/blind` | XXE | untrusted XML parsed with the hardening branch disabled (`parseXml(.., false)`) |
 | `POST /InsecureDeserialization/task` | Untrusted deserialization | `ObjectInputStream.readObject()` on request bytes |
 | `POST /VulnerableComponents/attack1` | Vulnerable component | `XStream.fromXML(input)` on a known-vulnerable library |
-| `GET /crypto/hashing/md5`, `/crypto/hashing/sha256`, `POST /crypto/hashing` | Weak cryptography | `MessageDigest` with MD5 / SHA-1 |
+| `GET /crypto/hashing/md5`, `/crypto/hashing/sha256`, `POST /crypto/hashing` | Insecure Hash Algorithms (Contrast rule) | `MessageDigest` with MD5 / SHA-1 |
 | `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
 | `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input` | Path traversal | user `fullName` / filename used to build the write path |
 | `POST /PathTraversal/profile-upload-fix` | Path traversal (incomplete fix) | the "fix" is a single-pass `fullName.replace("../","")`, which `....//` defeats, so the sink is still reachable (verified in v2025.3 source) |
@@ -180,6 +180,48 @@ would be producing false positives.
 | Insecure login | `/InsecureLogin/*` | credentials over the wire (transport) |
 | Password reset | `/PasswordReset/*` | reset-flow logic (some paths send mail via a URL fetch) |
 | JWT | `/JWT/*` | token forgery / alg confusion (crypto-misuse). Edge cases: the `kid` lesson does a SQL lookup with the `kid` value and the `jku` lesson fetches a URL, so those two could surface SQLi/SSRF-style findings, verify on the instance |
+
+## Contrast Assess rule coverage in this deploy
+
+Important framing for the call. Contrast Assess ships a large catalog of rules (NoSQL, JNDI,
+Hibernate, LDAP, XPath, OS command, expression-language injection, GraphQL controls, and many
+more). This WebGoat deploy exercises roughly **20 of them**, because WebGoat is a Spring + JDBC
+app and most other categories have no matching code path to observe. The number of findings here
+is bounded by the target, not by Contrast. Do not present "20 rule types" as Contrast's ceiling.
+
+The 20 rule types observed in this deploy (exact Contrast rule names and severities):
+
+| Severity | Contrast rule |
+|---|---|
+| Critical | SQL Injection |
+| High | Path Traversal |
+| High | XML External Entity Injection (XXE) |
+| High | Stored Cross-Site Scripting |
+| High | Untrusted Deserialization |
+| Medium | Unchecked Spring Autobinding |
+| Medium | Insecure Hash Algorithms |
+| Medium | Application Disables ''secure'' Flag on Cookies |
+| Medium | Hardcoded Password |
+| Note | Log Injection |
+| Note | Weak Random Number Generation |
+| Note | Insecure Encryption Algorithms |
+| Note | Parameter Pollution |
+| Note | Forms Without Autocomplete Prevention |
+| Note | Anti-Caching Controls Missing |
+| Note | Pages Without Anti-Clickjacking Controls |
+| Note | Response With X-XSS-Protection Disabled |
+| Note | Response Without X-Content-Type-Options Header |
+| Note | Response With Insecurely Configured Content-Security-Policy Header |
+| Note | Response With Insecurely Configured Strict-Transport-Security Header |
+
+Rules WebGoat *does* have a lesson for but that do not surface here, each for a reason already
+covered above, are **Cross-Site Scripting** (Medium, the reflected SPA lesson renders
+client-side, so Assess is quiet and Protect catches it), **Server-Side Request Forgery**
+(Medium, the egress / attribution case on `SSRF/task2`), and **Cross-Site Request Forgery**
+(High, this deploy disables CSRF protection and the lesson is logic-level, so it is not a
+dataflow finding). Note that Contrast splits XSS into two rules, **Stored Cross-Site Scripting**
+(High, which fired on the server-side WebWolf mail render) and **Cross-Site Scripting** (Medium,
+the client-side reflected case), which is exactly the distinction in section A2.
 
 ## How to use this
 
