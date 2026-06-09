@@ -41,6 +41,8 @@ Scope: the findings observed in the WebGoat v2025.3 deploy in the 2026-06-09 exp
 | XXE | `POST /xxe/simple` | `xxe/SimpleXXE.java` | `comments.parseXml(commentStr, false)` (hardening disabled) on the untrusted body |
 | XXE | `POST /xxe/content-type`, `/xxe/blind` | `xxe/` (same `CommentsCache.parseXml(.., false)`) | same parse sink, different content type / blind variant (spot-check if needed) |
 | Untrusted Deserialization | `POST /InsecureDeserialization/task` | `deserialization/InsecureDeserializationTask.java` | `new ObjectInputStream(...).readObject()` on the decoded `token` |
+| Untrusted Deserialization | `POST /VulnerableComponents/attack1` | XStream 1.4.5 (`VulnerableComponents`) | `XStream.fromXML(input)` on untrusted XML, sink reached with benign input (the RCE gadget fails to init on JDK 23, the deserialization is still traced) |
+| Path Traversal + Header Injection | `GET /PathTraversal/random-picture` | `pathtraversal/ProfileUploadRetrieval.java` | `new File(catPicturesDirectory, id + ".jpg")` (traversal, CWE-22) and `.location(new URI(".../?id=" + catPicture.getName()))` (header injection, CWE-113) |
 | SQL Injection | `POST /register.mvc` | `container/users/UserService.java` (via `RegistrationController.registration`) | `jdbcTemplate.execute("CREATE SCHEMA \"" + username + "\" authorization dba")`, username concatenated into DDL |
 | SQL Injection | `POST /challenge/5` | `lessons/challenges/challenge5/Assignment5.java` | `prepareStatement("... password = '" + password_login + "'")`, concatenated string (injectable despite `prepareStatement`) |
 | Stored Cross-Site Scripting | `GET /WebWolf/mail` | `webwolf/mailbox/MailboxController.java` + `resources/webwolf/templates/mailbox.html` | stored email body rendered server-side unescaped via `<pre th:utext="${mail.contents}"/>` |
@@ -55,8 +57,12 @@ positive" claim is symmetrical:
 | Route | Source file | Why no finding is correct |
 |---|---|---|
 | `POST /SSRF/task2` | `ssrf/SSRFTask2.java` | `new URL(url).openStream()` runs only when `url` exactly equals `http://ifconfig.pro`; with no pod egress the call cannot complete, and route coverage would not attach it. Verify in the vulnerabilities list. |
-| `POST /VulnerableComponents/attack1` | `pom.xml` (`xstream.version 1.4.5`, `java.version 23`) | XStream 1.4.5 cannot initialize on JDK 23, the route 500s before `fromXML` completes, so there is no executed sink to observe. The vulnerable library still shows in Runtime SCA. |
 | `POST /SqlInjectionMitigations/attack12a` | `sqlinjection/mitigation/` | fully parameterized `PreparedStatement`, a true negative |
+
+Correction: `POST /VulnerableComponents/attack1` was previously listed here as a non-finding. It
+does in fact report as Untrusted Deserialization when benign XML reaches `XStream.fromXML` (see
+Tier A). The full RCE gadget chain fails to initialize on JDK 23, but the deserialization sink is
+still reached and traced. It is a true positive, not a silent route.
 
 ## Tier B — config-by-response (verified by the HTTP response, no code sink)
 

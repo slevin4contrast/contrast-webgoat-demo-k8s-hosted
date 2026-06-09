@@ -150,6 +150,31 @@ newer WebGoat were removed so every call hits a real route. Because it solves le
 it sends real exploit payloads, so treat it like the ADR attack run, only against your
 own lab.
 
+## Maximizing coverage (run both, do not clear between)
+
+The curated `run-exercises.mjs` and the full-coverage `full-coverage-exercise.py` are
+complementary, neither alone is a superset. The curated run surfaced Header Injection and the
+XStream Untrusted Deserialization that the solver's exploit payload did not register, while the
+solver drives far more routes. For the widest set, run the solver first, then `run-exercises.mjs`,
+and do **not** clear the Contrast UI between them so the findings accumulate. Give the agent 30 to
+60 seconds to flush, then export.
+
+What you cannot force from these scripts, because it is not a coverage problem: SSRF needs pod
+egress, the SPA lesson XSS renders client-side (Protect catches it), the logic and authorization
+lessons (IDOR, access control, JWT forgery) are out of scope for any IAST tool, and many catalog
+rules (NoSQL, LDAP, GraphQL, and so on) have no matching code in WebGoat at all.
+
+## CSRF
+
+Both scripts now end with a dedicated CSRF trigger. WebGoat disables Spring CSRF app-wide, so a
+state-changing POST with no token is unprotected. The Contrast Assess team confirmed the CSRF rule
+fires on the real state change (`register.mvc`, a DB write), not on the simulated `/csrf/*`
+lessons. The trigger sends a fresh, form-encoded registration POST with an external `Origin` and
+`Referer` and no `X-Requested-With` header (the most CSRF-shaped request possible). After a run,
+look for a Cross-Site Request Forgery finding on `/register.mvc`. If it does not appear on your
+instance while it does on another, compare the agent version and applied Assess policy, that
+difference is environmental, not a script gap.
+
 ## Notes
 
 - Endpoints, parameters, and code behavior were verified against WebGoat **v2025.3**

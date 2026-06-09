@@ -1137,6 +1137,30 @@ def read_back_pass():
         print(f"  ? servers read-back: {e}")
 
 
+def csrf_trigger():
+    """CSRF (CWE-352). WebGoat disables Spring CSRF app-wide, so a state-changing POST with no
+    anti-CSRF token is unprotected. The Contrast Assess team confirmed the CSRF rule fires on the
+    real state change -- register.mvc, a genuine DB write -- not on the simulated /csrf/* lessons.
+
+    We send the most CSRF-shaped request we can: a FRESH, form-encoded registration POST with an
+    external Origin and Referer and NO X-Requested-With header (use a bare `requests` call, not the
+    XHR session). This is a real new-user insert, a real unprotected state change.
+    """
+    print("\n=== CSRF trigger (cross-site register.mvc POST) ===")
+    csrf_user = f"csrf-victim-{int(time.time())}"
+    try:
+        r = requests.post(url("register.mvc"),
+                          data={"username": csrf_user, "password": PASS,
+                                "matchingPassword": PASS, "agree": "agree"},
+                          headers={"Origin": "http://evil.example",
+                                   "Referer": "http://evil.example/forged-csrf.html"},
+                          allow_redirects=False)
+        print(f"  sent as {csrf_user} (HTTP {r.status_code}). "
+              "Look for Cross-Site Request Forgery on /register.mvc in the Contrast UI.")
+    except Exception as e:
+        print(f"  ? csrf trigger: {e}")
+
+
 def sink_health_check():
     """Sink-exercised guard. "Route covered" is not "sink ran" -- the servers 400 proved that.
 
@@ -1291,6 +1315,9 @@ def main():
 
     # Final pass: re-read the stored-data endpoints so second-order sinks fire in one run.
     read_back_pass()
+
+    # CSRF trigger: a real cross-site, unprotected state change on register.mvc.
+    csrf_trigger()
 
     # Guard: confirm the headline real sinks actually executed (route-covered != sink-ran).
     sink_health_check()

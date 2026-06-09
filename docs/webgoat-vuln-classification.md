@@ -68,7 +68,7 @@ safe" would miss it. (Verified in v2025.3 source: both delegate to `injectableQu
 | `POST /SSRF/task2` | SSRF | `new URL(input).openStream()` server-side |
 | `POST /PathTraversal/profile-upload`, `/profile-upload-remove-user-input` | Path traversal | user `fullName` / filename used to build the write path |
 | `POST /PathTraversal/profile-upload-fix` | Path traversal (incomplete fix) | the "fix" is a single-pass `fullName.replace("../","")`, which `....//` defeats, so the sink is still reachable (verified in v2025.3 source) |
-| `GET /PathTraversal/random-picture` | Path traversal | `id` used to build a file path |
+| `GET /PathTraversal/random-picture` | Path traversal **and Header Injection** | `id` builds a file path (traversal, CWE-22) and is reflected into the `Location` response header via `.location(new URI(".../?id=" + ...))` (header injection, CWE-113) |
 | `POST /PathTraversal/zip-slip` | Zip slip (path traversal) | archive entry name used to write outside the target dir |
 | `POST /WebWolf/fileupload` | Path traversal | uploaded filename builds the stored path (WebWolf module) |
 
@@ -104,17 +104,20 @@ nothing. Exercising it and getting no finding is the point, not a miss.
 
 ### Three real routes that can show no finding (coverage notes, not detection gaps)
 
-In the 2026-06-09 run these three real-sink routes had no finding. None is a Contrast miss:
+Routes that were blank in an early run but are explained (none is a Contrast miss, and two now
+fire after a fix or with the right input):
 
 - `GET /SqlInjectionMitigations/servers` — real `order by " + column` concatenation, but
   `column` is a **required** request param. The earlier full-coverage solver hit the route
   with no `column`, so WebGoat returned HTTP 400 and the sink never ran. Fixed in
   `demo/full-coverage-exercise.py` (now sends `?column=hostname`); it fires after the fix.
-- `POST /VulnerableComponents/attack1` — the bundled **XStream 1.4.5 is incompatible with
-  JDK 11+** (WebGoat v2025.3 runs JDK 23), so `XStream.fromXML` throws during converter init
-  and the route returns 500. The vulnerable path can't fully execute on this runtime, so
-  Assess does not raise a dataflow finding (correctly, it didn't run). The vulnerable library
-  still appears in Runtime SCA / libraries, which is the right place to show it.
+- `POST /VulnerableComponents/attack1` — **this one now fires as Untrusted Deserialization,
+  and how it fires is a great IAST story.** The full-coverage solver throws a heavy XStream RCE
+  gadget, which fails to initialize on JDK 23 (XStream 1.4.5) and returns 500, so the exploit
+  does not complete. But the curated benign run sends simple XML that reaches `XStream.fromXML`,
+  and Contrast traces the deserialization sink from that alone. The working exploit found
+  nothing; benign functional use found the vulnerability. The vulnerable library also appears in
+  Runtime SCA. If you see no finding, drive the route with simple XML rather than a gadget.
 - `POST /SSRF/task2` — `new URL(url).openStream()` only runs when `url` exactly matches
   `http://ifconfig.pro`; the solver sends that, so the sink is invoked. If the pod has no
   outbound network the call throws and WebGoat still returns success. Check the UI
@@ -167,6 +170,7 @@ infers from the response can flag them.
 | `POST /CrossSiteScripting/attack1`, `/attack6a`, `/dom-follow-up` | checkbox / route / success-message checks (the lesson's pass/fail gates) |
 | `POST /CrossSiteScripting/attack3`, `/attack4` | regex over submitted JSP / AntiSamy *code* (code-review checks) |
 | `POST /LogSpoofing/log-spoofing` | `replace("\n",...)` + `contains` check on echoed text; no logger sink. **Note:** this *lesson* is simulated, but real Log Injection findings appear elsewhere in the app (WebWolf, registration) where input genuinely reaches a logger — see bucket A. |
+| `/csrf/*` (basic-get-flag, review, feedback, login) | the CSRF *lessons* gate success on a `Referer` string check and a hardcoded weak token; they do not perform a real, protected state change. The Contrast Assess team confirmed "the CSRF page isn't real," so the CSRF rule correctly stays quiet here. The real CSRF target is `register.mvc`, see bucket C1. |
 | `crypto/encoding/basic`, `/basic-auth`, `/xor`, `/secure/defaults`, `/signing/verify` | base64 / `.equals` / format checks (only `crypto/hashing` is a real weak-hash) |
 | Quizzes: `cia/quiz`, `SqlInjectionAdvanced/quiz`, `CrossSiteScripting/quiz`, `JWT/quiz`, `HttpBasics/attack2` | multiple-choice answer comparison |
 | `HttpBasics/attack1`, `ChromeDevTools/*`, `HttpProxies/*`, `SecurePasswords/assignment`, `lesson-template/*`, `BypassRestrictions/*`, `ClientSideFiltering/*`, `HtmlTampering/task` | teaching/echo/validation checks |
@@ -182,7 +186,7 @@ C1. Contrast has a dedicated rule for these (it can report them, separate from d
 
 | Lesson area | Routes | Matching Contrast rule |
 |---|---|---|
-| CSRF | `/csrf/*` | **Cross-Site Request Forgery** (High). WebGoat is a valid target: its `WebSecurityConfig` calls `.csrf(csrf -> csrf.disable())`, so Spring CSRF protection is off app-wide and every state-changing POST is unprotected. The coverage script already sends cross-site, no-token POSTs to these routes, yet the rule produced no finding in our export. That is a policy or instrumentation matter, not a coverage gap (see the policy-check note below). |
+| CSRF | `POST /register.mvc` (the real target), not `/csrf/*` | **Cross-Site Request Forgery** (High). WebGoat disables Spring CSRF app-wide (`.csrf().disable()`), so a genuine state-changing request with no token is unprotected. The Contrast Assess team confirmed the rule fires on `register.mvc`, because registration is a real DB write, and correctly does not fire on the `/csrf/*` lessons, which are simulated (Referer plus hardcoded-token checks, not a real protected operation). The trigger is a bare form-style POST without the `X-Requested-With` header. |
 | Spoof cookie / session cookies | `/SpoofCookie/*` | cookie rules: **Application Disables 'secure' Flag on Cookies**, **Session Cookie Has No 'HttpOnly' Flag** (the `secure`-flag one did fire in our export) |
 | Hijack session | `/HijackSession/login` | session rules: **Session Rewriting**, **Overly Long Session Timeout** (the predictable-id weakness itself is logic, see C2) |
 | Insecure login | `/InsecureLogin/*` | **Insecure Authentication Protocol**, **Insecure SSL Socket Creation** (transport-level) |
@@ -203,11 +207,12 @@ reliably finds these without understanding intent):
 
 Important framing for the call. Contrast Assess ships a large catalog of rules (NoSQL, JNDI,
 Hibernate, LDAP, XPath, OS command, expression-language injection, GraphQL controls, and many
-more). This WebGoat deploy exercises roughly **20 of them**, because WebGoat is a Spring + JDBC
-app and most other categories have no matching code path to observe. The number of findings here
-is bounded by the target, not by Contrast. Do not present "20 rule types" as Contrast's ceiling.
+more). This WebGoat deploy exercises **22 of them** across the two exercise scripts combined,
+because WebGoat is a Spring + JDBC app and most other categories have no matching code path to
+observe. The number of findings here is bounded by the target, not by Contrast. Do not present
+"22 rule types" as Contrast's ceiling.
 
-The 20 rule types observed in this deploy (exact Contrast rule names and severities):
+The 22 rule types observed in this deploy (exact Contrast rule names and severities):
 
 | Severity | Contrast rule |
 |---|---|
@@ -216,6 +221,7 @@ The 20 rule types observed in this deploy (exact Contrast rule names and severit
 | High | XML External Entity Injection (XXE) |
 | High | Stored Cross-Site Scripting |
 | High | Untrusted Deserialization |
+| High | Header Injection |
 | Medium | Unchecked Spring Autobinding |
 | Medium | Insecure Hash Algorithms |
 | Medium | Application Disables ''secure'' Flag on Cookies |
@@ -229,8 +235,13 @@ The 20 rule types observed in this deploy (exact Contrast rule names and severit
 | Note | Pages Without Anti-Clickjacking Controls |
 | Note | Response With X-XSS-Protection Disabled |
 | Note | Response Without X-Content-Type-Options Header |
+| Note | Response Without Content-Security-Policy Header |
 | Note | Response With Insecurely Configured Content-Security-Policy Header |
 | Note | Response With Insecurely Configured Strict-Transport-Security Header |
+
+Note: Header Injection and Untrusted Deserialization on `VulnerableComponents/attack1` came from
+the curated functional exercise (`run-exercises.mjs`), not the full-coverage solver. The two
+scripts are complementary, run both for the widest coverage.
 
 Rules WebGoat *does* have a lesson for but that did not surface in our export, each for a
 different reason:
@@ -239,31 +250,34 @@ different reason:
   is quiet and Protect catches the inbound payload. (Distinct from **Stored Cross-Site
   Scripting** (High), which *did* fire on the server-side WebWolf mail render, see section A2.)
 - **Server-Side Request Forgery** (Medium) — the egress / attribution case on `SSRF/task2`.
-- **Cross-Site Request Forgery** (High) — Contrast has a CSRF rule and WebGoat is a valid target
-  (`WebSecurityConfig` does `.csrf().disable()`, so protection is off app-wide). The coverage
-  script already drives the `/csrf/*` routes with cross-site, no-token POSTs, so this is not a
-  coverage gap. It still produced no finding, which points at the policy or the rule's
-  instrumentation model (see the next section).
+- **Cross-Site Request Forgery** (High) — did not surface on the `/csrf/*` lessons because those
+  are simulated (the Assess team confirmed "the CSRF page isn't real"). It DOES fire on the real
+  target, `register.mvc`, a genuine unprotected state-changing DB write. See the resolved CSRF
+  note below.
 
 Contrast splits XSS into two rules, **Stored Cross-Site Scripting** (High) and **Cross-Site
 Scripting** (Medium), which is exactly the distinction in section A2.
 
-## Rules that need a policy or product check (not a coverage problem)
+## CSRF — resolved, and Hardcoded Cryptographic Key — open
 
-Two rules have a valid WebGoat target that the coverage script already exercises, yet they did
-not produce a finding. The lever for these is the Contrast Assess policy or a rule-applicability
-question for the product team, not the exercise script. We confirmed the routes execute, so do
-not try to "fix" these by changing the solver.
+**Cross-Site Request Forgery (High) — resolved.** The Contrast Assess team confirmed the rule
+fires on `register.mvc`, because registration is a real, unprotected, state-changing DB write
+(WebGoat disables Spring CSRF app-wide). It correctly does not fire on the `/csrf/*` lessons,
+which are simulated (Referer and hardcoded-token checks, not a real protected operation). The
+trigger is a bare form-style POST to `register.mvc` without the `X-Requested-With` header. Our
+solver's main registration is already a bare POST, so a fresh run should surface it. If it does
+not appear on our instance, compare the agent version and applied policy with the peer instance
+where it fired, rather than changing the exercise. Earlier hypotheses about a disabled
+`CsrfFilter` blocking the rule were wrong, the rule keys on the real state-changing request.
 
-| Rule | Valid target in WebGoat (confirmed in source) | Why it likely did not fire | What to do |
-|---|---|---|---|
-| Cross-Site Request Forgery (High) | `WebSecurityConfig` disables Spring CSRF app-wide; the `/csrf/*` POSTs are unprotected and the script hits them cross-site without a token | With Spring CSRF disabled there is no `CsrfFilter` in the chain for the rule to evaluate, and many WebGoat endpoints are JSON/XHR which a CSRF rule may treat as non-relevant | In the UI, Policy management, confirm the Cross-Site Request Forgery rule is enabled in the Assess policy applied to this app. If enabled and still silent, raise the disabled-filter case with the Contrast product team. |
-| Hardcoded Cryptographic Key (Medium) | `JWTSecretKeyEndpoint` holds a hardcoded `SECRETS` array used as the HS256 signing key, and the script calls `/JWT/secret/gettoken`, so the signing code runs | The key is a plain `String` handed to jjwt's `signWith`, not a `javax.crypto.spec.SecretKeySpec` or `KeyGenerator`, so it may not match the rule's sink pattern | Confirm the rule is enabled in the policy. If enabled, this is a rule-pattern question for the product team, the hardcoded **password** rule did fire, so hardcoded-secret detection is working in general. |
-
-The takeaway for the eval: the coverage script is not the bottleneck for these. The vulnerable
-code is present and exercised. Whether the rule fires depends on the applied Assess policy and
-how the rule models that specific framework usage. Verify the policy before the live session so
-you can speak to it accurately.
+**Hardcoded Cryptographic Key (Medium) — open.** `JWTSecretKeyEndpoint` holds a hardcoded
+`SECRETS` array used as the HS256 signing key, and the script calls `/JWT/secret/gettoken`, so
+the signing code runs, yet no finding appears. The likely reason is that the key is a plain
+`String` handed to jjwt's `signWith`, not a `javax.crypto.spec.SecretKeySpec` or `KeyGenerator`,
+so it may not match the rule's sink pattern. The hardcoded **password** rule did fire, so
+hardcoded-secret detection works in general. Confirm the rule is enabled in the policy, and if so
+raise the jjwt String-key case with the product team. This is a rule-pattern question, not a
+coverage gap.
 
 ## How to use this
 

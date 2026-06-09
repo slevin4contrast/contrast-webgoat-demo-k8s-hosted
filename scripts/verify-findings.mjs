@@ -66,6 +66,7 @@ const ROUTES = {
   "/PathTraversal/profile-upload-fix":              ["real", "Path traversal (single-pass ../ strip is bypassable)"],
   "/PathTraversal/profile-upload-remove-user-input":["real", "Path traversal (filename builds write path)"],
   "/PathTraversal/zip-slip":                        ["real", "Zip slip (archive entry name written outside target dir)"],
+  "/PathTraversal/random-picture":                  ["real", "Path traversal + Header Injection (id builds file path and is reflected into the Location header)"],
   // Real sink but render-dependent -- verify on the instance, do not overclaim.
   // The WebGoat *lesson* XSS routes return JSON and render in the SPA (client-side), so
   // server-side Assess generally stays quiet -- see docs/webgoat-vuln-classification.md (A2).
@@ -93,7 +94,7 @@ const NO_FINDING_REASON = {
   "/SqlInjectionMitigations/servers":
     "coverage: `column` is a required param; without it WebGoat returns 400 and the sink never runs (solver now sends ?column=).",
   "/VulnerableComponents/attack1":
-    "code never ran: XStream 1.4.5 can't init on JDK 23, route 500s before fromXML completes. The vulnerable library still shows in Runtime SCA.",
+    "payload-dependent: the XStream RCE gadget fails to init on JDK 23 (500), but BENIGN XML that reaches XStream.fromXML DOES report as Untrusted Deserialization (seen in the run-exercises run). The library also shows in Runtime SCA. If blank, drive it with simple XML.",
   "/SSRF/task2":
     "environment/attribution: openStream only fires for url==http://ifconfig.pro; no egress means it can't complete. Check the vulnerabilities list directly.",
   "/CrossSiteScriptingStored/stored-xss":

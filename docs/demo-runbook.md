@@ -82,9 +82,12 @@ real sink at runtime, so it does not generate the noise other techniques do.
 4. Back it with evidence. Open the ledger and show that every finding maps to a source line or a
    confirmed trace. This is how you answer "prove these are real" without hand-waving.
 5. The honesty points (these win technical trust):
-   - `VulnerableComponents/attack1` shows no Assess finding because XStream 1.4.5 cannot run on
-     JDK 23, the path 500s before the sink completes. Contrast did not fabricate a finding for
-     code that did not execute, and the vulnerable library still shows in SCA. Show both.
+   - `VulnerableComponents/attack1` is the best IAST moment. The aggressive exploit (the
+     full-coverage solver's XStream RCE gadget) finds nothing, because XStream 1.4.5 crashes on
+     JDK 23 before completing. But the benign functional run sends simple XML that reaches
+     `XStream.fromXML`, and Contrast reports it as Untrusted Deserialization from the dataflow
+     alone. The working attack found nothing; normal use found the vuln. The vulnerable library
+     also shows in SCA. This is the "no attack payload needed" story made concrete.
    - WebGoat's SPA lesson XSS is real but renders client-side, so Assess is quiet and Protect
      catches the inbound payload. The WebWolf mail XSS is server-side, so Assess reports it.
      Showing you know the difference is more credible than claiming Contrast finds all XSS.

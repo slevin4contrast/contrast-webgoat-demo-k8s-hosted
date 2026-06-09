@@ -79,6 +79,31 @@ async function register(ctx) {
   }
 }
 
+async function csrfTrigger(ctx) {
+  // CSRF (CWE-352). WebGoat disables Spring CSRF app-wide, so a state-changing POST with no
+  // anti-CSRF token is unprotected. The Contrast Assess team confirmed the CSRF rule fires on
+  // the real state change -- register.mvc, a genuine DB write -- not on the simulated /csrf/*
+  // lessons. We send the most CSRF-shaped request we can: a FRESH, form-encoded registration
+  // POST with an external Origin and Referer and NO X-Requested-With header (a forged request
+  // cannot set that header cross-origin). This is a real new-user insert, so it is a real
+  // unprotected state change.
+  const csrfUser = `csrf-victim-${Date.now()}`;
+  const res = await ctx.post(`${BASE_URL}/register.mvc`, {
+    form: {
+      username: csrfUser,
+      password: PASSWORD,
+      matchingPassword: PASSWORD,
+      agree: "agree",
+    },
+    headers: {
+      origin: "http://evil.example",
+      referer: "http://evil.example/forged-csrf.html",
+    },
+    maxRedirects: 0,
+  });
+  return { user: csrfUser, status: res.status() };
+}
+
 async function verifyAuth(ctx) {
   const res = await ctx.get(`${BASE_URL}/service/lessonmenu.mvc`);
   if (res.status() !== 200 || res.url().includes("/login")) {
@@ -131,10 +156,22 @@ async function main() {
       await sleep(DELAY_MS);
     }
 
+    // CSRF trigger: a real cross-site, unprotected state change on register.mvc.
+    process.stdout.write("\nCSRF trigger (cross-site register.mvc POST)... ");
+    try {
+      const c = await csrfTrigger(ctx);
+      console.log(
+        `sent as ${c.user} (HTTP ${c.status}). ` +
+          "Look for Cross-Site Request Forgery on /register.mvc in the Contrast UI."
+      );
+    } catch (err) {
+      console.log(`request error: ${err.message}`);
+    }
+
     line();
     console.log(
       `Done. Exercised ${counts.VULNERABLE} vulnerable, ${counts.SAFE} safe, ` +
-        `${counts.SIMULATED} simulated routes.`
+        `${counts.SIMULATED} simulated routes, plus a CSRF trigger on register.mvc.`
     );
     console.log("In the Contrast UI you should now see findings for the VULNERABLE");
     console.log("routes and nothing for the SAFE or SIMULATED ones -- found through");
